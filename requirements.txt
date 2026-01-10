@@ -1,3 +1,4 @@
+# Pinned Python dependencies for reproducible installs
 accelerate==1.12.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
@@ -37,10 +38,8 @@ llama-cloud-services==0.6.54
 llama-index==0.14.12
 llama-index-cli==0.5.3
 llama-index-core==0.14.12
-llama-index-embeddings-openai==0.5.1
 llama-index-indices-managed-llama-cloud==0.9.4
 llama-index-instrumentation==0.4.2
-llama-index-llms-openai==0.6.12
 llama-index-readers-file==0.5.6
 llama-index-readers-llama-parse==0.5.1
 llama-index-workflows==2.11.7
@@ -69,7 +68,6 @@ nvidia-nccl-cu12==2.27.5
 nvidia-nvjitlink-cu12==12.8.93
 nvidia-nvshmem-cu12==3.3.20
 nvidia-nvtx-cu12==12.8.90
-openai==2.14.0
 packaging==25.0
 pandas==2.3.3
 pillow==12.1.0

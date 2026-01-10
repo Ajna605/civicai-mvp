@@ -1,0 +1,1 @@
+#  GPU selection, memory config, standardized execution

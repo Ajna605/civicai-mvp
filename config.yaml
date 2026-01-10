@@ -1,0 +1,6 @@
+# Centralized configuration
+# - LLM + embedding model names
+# - chunking parameters
+# - retrieval top_k
+# - prompt template selection
+# - index version to load

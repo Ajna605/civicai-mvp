@@ -1,0 +1,1 @@
+# Centralized file paths for consistency
