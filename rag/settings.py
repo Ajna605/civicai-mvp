@@ -4,6 +4,7 @@
 from llama_index.core import Settings
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.huggingface import HuggingFaceLLM
+import torch
 
 def apply_settings():
     Settings.embed_model = HuggingFaceEmbedding(
@@ -15,11 +16,12 @@ def apply_settings():
         tokenizer_name="Qwen/Qwen2.5-7B-Instruct",
         context_window=8192,
         max_new_tokens=250,
-        generate_kwargs={
-            "temperature": 0.1,
-            "do_sample": False,
-            "repetition_penalty": 1.2,
-            "no_repeat_ngram_size": 4,
-        },
-        model_kwargs={"torch_dtype": "auto"},
+        device_map = "cuda",
+        # generate_kwargs={
+        #     "temperature": 0.1,
+        #     "do_sample": False,
+        #     "repetition_penalty": 1.2,
+        #     "no_repeat_ngram_size": 4,
+        # },
+        model_kwargs={"dtype": torch.bfloat16}
     )
