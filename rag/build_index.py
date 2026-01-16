@@ -9,7 +9,7 @@ apply_settings()
 
 INDEX_DIR = Path("storage/index/v1")
 
-def build_index(data_dir: str = "data/raw"):
+def build_index(data_dir: str = "data/processed"):
     docs = SimpleDirectoryReader(data_dir).load_data()
     index = VectorStoreIndex.from_documents(docs)
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
