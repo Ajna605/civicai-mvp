@@ -1,1 +1,65 @@
 // Canonical policy questions for evaluation
+
+
+[
+  {
+    "id": "Q1",
+    "question": "What does the document say about Policy ADM-1.5.3?",
+    "type": "exact_lookup",
+    "expected": {
+      "must_mention": ["ADM-1.5.3"],
+      "should_not_mention": ["ADM-1.4", "PRP-1"],
+      "source_document": "Coral_Gables_Comprehensive_Plan",
+      "known_issue": true
+    },
+    "notes": "Reference is wrong"
+  },
+  {
+    "id": "Q2",
+    "question": "What are the residential density limits in the coastal area east of Old Cutler Road?",
+    "type": "policy_lookup",
+    "expected": {
+      "must_mention": ["six", "dwelling units"],
+      "should_mention": ["Old Cutler Road"]
+    },
+    "notes": "Previously returned correct answer but slow / verbose"
+  },
+  {
+    "id": "Q3",
+    "question": "How does the plan describe the process for amending the Comprehensive Plan?",
+    "type": "general_summary",
+    "expected": {
+      "should_mention": ["amend", "Comprehensive Plan"],
+      "allowed_sources": ["Administration Element"]
+    },
+    "notes": "General summary question (not exact ID)"
+  },
+  {
+    "id": "Q4",
+    "question": "What does the plan say about affordable housing?",
+    "type": "broad_topic",
+    "expected": {
+      "should_mention": ["housing"],
+      "may_span_multiple_policies": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q5",
+    "question": "What does Table 3-2 show?",
+    "type": "table_lookup",
+    "expected": {
+      "known_issue": true
+    },
+    "notes": "Expected to fail until table preprocessing is fixed"
+  },
+    {
+    "id": "Q6",
+    "question": "Does the Coral Gables plan specify housing density limits?",
+    "type": "table_lookup",
+    "expected": {
+      "known_issue": true
+    },
+    "notes": "Expected to fail until table preprocessing is fixed"
+  }
+]
