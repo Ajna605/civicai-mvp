@@ -6,7 +6,7 @@
     "expected": {
       "must_mention": ["ADM-1.5.3"],
       "should_not_mention": ["ADM-1.4", "PRP-1.1.4"],
-      "source_document": "Coral_Gables_Comprehensive_Plan",
+      "source_document": "Coral_Gables_Comprehensive_Plan"
     },
     "known_issue": true,
     "notes": "Reference is wrong"
@@ -47,7 +47,7 @@
     "question": "What is in the table showing Recreation facilities radius standard?",
     "type": "table_lookup",
     "expected": {
-      "must_mention": ["Park Type", "Service Radius"],
+      "must_mention": ["Park Type", "Service Radius"]
     },
     "known_issue": true,
     "notes": "Expected to fail until table preprocessing is fixed"
@@ -57,7 +57,7 @@
     "question": "Does the Coral Gables plan specify housing density limits?",
     "type": "table_lookup",
     "expected": {
-      "should_mention": ["Policy FLU-1.1.2", "Residential Land Uses"],
+      "should_mention": ["Policy FLU-1.1.2", "Residential Land Uses"]
     },
     "known_issue": true,
     "notes": "Expected to fail until table preprocessing is fixed"
