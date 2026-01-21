@@ -20,8 +20,8 @@ if __name__ == "__main__":
     # q = "What is the restriction in regards to residential development throughout the coastal area of East of Old Cutler Road?"
     # q = "Does the Coral Gables plan specify residential density limits?"
     # q = "Explain what is mentioned in Policy FLU-1.1.2."
-    # q = "What does the document say about Policy ADM-1.5.3.?"
-    q = "Who are partners of the City?"
+    q = "What does the document say about Policy ADM-1.5.3.?"
+    # q = "Who are partners of the City?"
 
     print(query_civicai(q))
     end = time.time()
