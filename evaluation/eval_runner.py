@@ -1,7 +1,3 @@
-<<<<<<< Updated upstream
-# Run evaluation loop, log pass/fail,
-# flag repetition and hallucination
-=======
 """
 eval_runner.py (rewritten)
 - Adds chunk_len_chars + header_distance diagnostics
@@ -758,4 +754,3 @@ def main():
 
 if __name__ == "__main__":
     main()
->>>>>>> Stashed changes
