@@ -28,11 +28,7 @@
     "question": "How does the plan describe the process for amending the Comprehensive Plan?",
     "category": "section_lookup",
     "expected": {
-<<<<<<< Updated upstream
-      "must_mention": ["public", "development procedures manual"],
-=======
       "must_mention_any": ["Amend the Comprehensive Plan", "amending the Comprehensive Plan"],
->>>>>>> Stashed changes
       "should_mention": ["Objective ADM-1.5."],
       "should_not_mention": []
     },

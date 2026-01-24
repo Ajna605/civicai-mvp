@@ -1,0 +1,24 @@
+{
+  "run_id": "20260124_170059",
+  "ingested_at": "2026-01-24T17:01:00.484316",
+  "inputs": [
+    {
+      "path": "data/raw/Coral Gables - Comprehensive Plan - 12-25-2025 20-55 - selectable.pdf",
+      "doc_id": "coral_gables_comp_plan",
+      "file_name": "Coral Gables - Comprehensive Plan - 12-25-2025 20-55 - selectable.pdf",
+      "file_type": "pdf",
+      "sha256": "92c00d0233136b8800ed17558170c108e19cb27ec52cc9960dc3ad852c9277d5",
+      "output_normalized": "data/normalized/coral_gables_comp_plan.normalized.json",
+      "stats": {
+        "sections": 722,
+        "tables": 0,
+        "page_range": {
+          "min": 1,
+          "max": 142
+        }
+      },
+      "warnings": []
+    }
+  ],
+  "notes": "Hybrid PDF normalization with heading hierarchy; tables not extracted yet."
+}
