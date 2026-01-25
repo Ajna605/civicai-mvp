@@ -1,4 +1,140 @@
-// Preprocessing stats
-// - number of sections
-// - character/token counts
-// - cleaning steps applied
+{
+  "inputs": {
+    "sections_file": "/workspaces/civicai-mvp/data/processed/sections.jsonl"
+  },
+  "outputs": {
+    "chunks_file": "/workspaces/civicai-mvp/data/processed/rag_chunks.jsonl",
+    "report_file": "/workspaces/civicai-mvp/data/processed/ingestion_report.json"
+  },
+  "preprocessing_stats": {
+    "number_of_sections_total": 678,
+    "number_of_sections_kept": 678,
+    "number_of_chunks_written": 736,
+    "dedupe_enabled": true,
+    "chunking": {
+      "default": {
+        "max_chars": 1600,
+        "overlap_chars": 200
+      },
+      "giant_section_rule": {
+        "threshold_chars": 4000,
+        "max_chars": 900,
+        "overlap_chars": 120
+      }
+    }
+  },
+  "character_counts": {
+    "sections": {
+      "total": 288493,
+      "mean": 425.50589970501477,
+      "p50": 294,
+      "p90": 635,
+      "p95": 1014,
+      "max": 10944
+    },
+    "chunks": {
+      "total": 294219,
+      "mean": 399.7540760869565,
+      "p50": 303,
+      "p90": 788,
+      "p95": 971,
+      "max": 1600
+    }
+  },
+  "token_counts_estimate": {
+    "note": "Token counts are rough estimates (chars//4). Use tiktoken for exact counts per model.",
+    "sections": {
+      "total": 71867,
+      "mean": 105.99852507374631,
+      "p50": 73,
+      "p90": 158,
+      "p95": 253,
+      "max": 2736
+    },
+    "chunks": {
+      "total": 73274,
+      "mean": 99.5570652173913,
+      "p50": 75,
+      "p90": 197,
+      "p95": 242,
+      "max": 400
+    }
+  },
+  "cleaning_steps_applied": [
+    "replace_non_breaking_space",
+    "normalize_newlines",
+    "collapse_spaces_tabs",
+    "collapse_excess_blank_lines",
+    "strip_edges"
+  ],
+  "largest_sections_top10": [
+    {
+      "chars": 10944,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Capital Improvements Element > Goal CIE-1. > Objective CIE-1.2. > Policy CIE-1.2.1.",
+      "title": "Policy CIE-1.2.1."
+    },
+    {
+      "chars": 6144,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Future Land Use Element > Goal FLU-1. > Objective FLU-1.1. > Policy FLU-1.1.6. > Table FLU-5. Other Land Uses.",
+      "title": "Table FLU-5. Other Land Uses."
+    },
+    {
+      "chars": 5397,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Capital Improvements Element > Goal CIE-1. > Objective CIE-1.3. > Policy CIE-1.3.3.",
+      "title": "Policy CIE-1.3.3."
+    },
+    {
+      "chars": 4936,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Future Land Use Element > Goal FLU-1. > Objective FLU-1.1. > Policy FLU-1.1.5. > Table FLU-4. Mixed-Use land use.",
+      "title": "Table FLU-4. Mixed-Use land use."
+    },
+    {
+      "chars": 4177,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Future Land Use Element > Goal FLU-1. > Objective FLU-1.1. > Policy FLU-1.1.3. > Table FLU-2. Commercial Land Uses.",
+      "title": "Table FLU-2. Commercial Land Uses."
+    },
+    {
+      "chars": 3560,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Green Initiatives Element > Goal GRN-1. > Transportation",
+      "title": "Transportation"
+    },
+    {
+      "chars": 2971,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Recreation and Open Space Element > Goal REC-1. > Objective REC-1.1. > Policy REC-1.1.1.",
+      "title": "Policy REC-1.1.1."
+    },
+    {
+      "chars": 2971,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Green Initiatives Element > Goal GRN-1. > Buildings and Site Design > Objective GRN-1.3.",
+      "title": "Objective GRN-1.3."
+    },
+    {
+      "chars": 2307,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Future Land Use Element > Goal FLU-1. > Objective FLU-1.1. > Policy FLU-1.1.2",
+      "title": "Policy FLU-1.1.2"
+    },
+    {
+      "chars": 2294,
+      "doc_id": "Coral_Gables_Comprehensive_Plan",
+      "path_text": "Green Initiatives Element > Goal GRN-1. > Landscaping/Natural Resources > Objective GRN-1.4.",
+      "title": "Objective GRN-1.4."
+    }
+  ],
+  "by_doc": {
+    "sections_kept": {
+      "Coral_Gables_Comprehensive_Plan": 678
+    },
+    "chunks_written": {
+      "Coral_Gables_Comprehensive_Plan": 736
+    }
+  }
+}
