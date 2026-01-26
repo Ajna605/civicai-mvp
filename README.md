@@ -11,7 +11,11 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Run instructions
+# LOAD and PREPROCESS Docs
+python ingestion/load_docs.py
+python ingestion/preprocess.py
 ## Create Index
+
 python -m rag.build_index
 ## Run RAG
 python ./main.py

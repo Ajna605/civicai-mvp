@@ -100,7 +100,7 @@ def query_civicai(query: str):
     # Return top 2 chunks (cleaned) + references
     top_texts = []
     refs = []
-    for nws in nodes[:2]:
+    for nws in nodes[:5]:
         top_texts.append(" ".join(nws.node.get_text().split())[:350])
         refs.append(ref_from(nws.node))
 

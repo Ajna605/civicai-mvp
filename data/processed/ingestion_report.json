@@ -1,10 +1,10 @@
 {
   "inputs": {
-    "sections_file": "/workspaces/civicai-mvp/data/processed/sections.jsonl"
+    "sections_file": "/a/bear.cs.fiu.edu./disk/bear-b/users/aram003/model/civicai-mvp/data/processed/sections.jsonl"
   },
   "outputs": {
-    "chunks_file": "/workspaces/civicai-mvp/data/processed/rag_chunks.jsonl",
-    "report_file": "/workspaces/civicai-mvp/data/processed/ingestion_report.json"
+    "chunks_file": "/a/bear.cs.fiu.edu./disk/bear-b/users/aram003/model/civicai-mvp/data/processed/rag_chunks.jsonl",
+    "report_file": "/a/bear.cs.fiu.edu./disk/bear-b/users/aram003/model/civicai-mvp/data/processed/ingestion_report.json"
   },
   "preprocessing_stats": {
     "number_of_sections_total": 678,
