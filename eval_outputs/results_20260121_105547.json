@@ -1,0 +1,149 @@
+[
+  {
+    "id": "Q1",
+    "type": "exact_lookup",
+    "question": "What does the document say about Policy ADM-1.5.3?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 1.0,
+    "precision_at_k": 0.2,
+    "first_relevant_rank": 1,
+    "should_hit": null,
+    "should_not_violation": 1,
+    "must_mention": [
+      "ADM-1.5.3"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "Policy ADM-1.4.2. Assign lead departments and personnel to monitor, evaluate, and appraise applicable elements of the Comprehensive Plan to identify progress, deficiencies, and/or failures. Policy ADM-1.4.3. Update appro\u2026",
+      "Policy PRP-1.1.4. The City shall consider the right of a property owner to sell or gift their property. Policy PRP-1.1.5. Adhere to the rule of law in making land use decisions, whether legislative, administrative, or qu\u2026"
+    ],
+    "first_relevant_source": "Coral_Gables_Comprehensive_Plan.docx",
+    "first_relevant_snippet": "Policy ADM-1.4.2. Assign lead departments and personnel to monitor, evaluate, and appraise applicable elements of the Comprehensive Plan to identify progress, deficiencies, and/or failures. Policy ADM-1.4.3. Update appro\u2026",
+    "known_issue": true,
+    "notes": "Reference is wrong"
+  },
+  {
+    "id": "Q2",
+    "type": "policy_lookup",
+    "question": "What are the residential density limits in the coastal area east of Old Cutler Road?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 0.25,
+    "precision_at_k": 0.2,
+    "first_relevant_rank": 4,
+    "should_hit": null,
+    "should_not_violation": null,
+    "must_mention": [
+      "six",
+      "dwelling units",
+      "Old Cutler Road"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "Policy MOB-2-1.2. Roadways that are physically or environmentally constrained or legislatively prohibited from expansion due to their valued historic, or cultural character, will be allowed to operate at a LOS above the \u2026",
+      "Policy FLU-1.1.1. The City\u2019s Future Land Use Classifications and Map shall describe, assign, and depict the future land uses found to be in the public interest and to be the basis for regulations, programs, actions and r\u2026"
+    ],
+    "first_relevant_source": "Coral_Gables_Comprehensive_Plan.docx",
+    "first_relevant_snippet": "Policy FLU-1.4.2. Those areas designated on the Future Land Use Map for Conservation will not be subject to development, with the only allowable exception for open space and recreational uses after the review and approva\u2026",
+    "known_issue": false,
+    "notes": "Previously returned correct answer but slow / verbose"
+  },
+  {
+    "id": "Q3",
+    "type": "general_summary",
+    "question": "How does the plan describe the process for amending the Comprehensive Plan?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 0.5,
+    "precision_at_k": 0.2,
+    "first_relevant_rank": 2,
+    "should_hit": 1,
+    "should_not_violation": null,
+    "must_mention": [
+      "public",
+      "development procedures manual"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "Administration Element Vision Statement: Provide for guidelines and policies for the efficient and effective administration of the City of Coral Gables Comprehensive Plan. Goals, Objectives and Policies: Goal ADM-1. The \u2026",
+      "Policy ADM-1.4.2. Assign lead departments and personnel to monitor, evaluate, and appraise applicable elements of the Comprehensive Plan to identify progress, deficiencies, and/or failures. Policy ADM-1.4.3. Update appro\u2026"
+    ],
+    "first_relevant_source": "Coral_Gables_Comprehensive_Plan.docx",
+    "first_relevant_snippet": "Policy ADM-1.4.2. Assign lead departments and personnel to monitor, evaluate, and appraise applicable elements of the Comprehensive Plan to identify progress, deficiencies, and/or failures. Policy ADM-1.4.3. Update appro\u2026",
+    "known_issue": false,
+    "notes": "General summary question (not exact ID)"
+  },
+  {
+    "id": "Q4",
+    "type": "broad_topic",
+    "question": "What does the plan say about affordable housing?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 1.0,
+    "precision_at_k": 0.6,
+    "first_relevant_rank": 1,
+    "should_hit": 1,
+    "should_not_violation": null,
+    "must_mention": [],
+    "key_phrases": [
+      "affordable housing",
+      "housing opportunities"
+    ],
+    "top_snippets": [
+      "Policy HOU-1.1.6. The City shall continue to participate in South Florida Regional Planning Council's initiatives directed toward educating local governments of new techniques, especially programs applicable to the regio\u2026",
+      "Policy COM-6.1.2. Encourage designs which will diminish groundwater withdrawals and increase high quality groundwater recharge. This policy was revised beyond the EAR recommendations due to further review. Policy COM-6.1\u2026"
+    ],
+    "first_relevant_source": "Coral_Gables_Comprehensive_Plan.docx",
+    "first_relevant_snippet": "Policy HOU-1.1.6. The City shall continue to participate in South Florida Regional Planning Council's initiatives directed toward educating local governments of new techniques, especially programs applicable to the regio\u2026",
+    "known_issue": false,
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q5",
+    "type": "table_lookup",
+    "question": "What is in the table showing Recreation facilities radius standard?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 1.0,
+    "precision_at_k": 0.4,
+    "first_relevant_rank": 1,
+    "should_hit": null,
+    "should_not_violation": null,
+    "must_mention": [
+      "Park Type",
+      "Service Radius"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "Goals, Objectives and Policies: Goal REC-1. The City of Coral Gables recreation system will serve the residents with neighborhood parks and open spaces that offer both passive and active recreation activities and facilit\u2026",
+      "Recreation LOS Standards. Maintain the existing level of services provided by recreation programs and activities to meet the continuing needs of all residents. The minimum acceptable LOS standards for recreation and open\u2026"
+    ],
+    "first_relevant_source": "Coral_Gables_Comprehensive_Plan.docx",
+    "first_relevant_snippet": "Goals, Objectives and Policies: Goal REC-1. The City of Coral Gables recreation system will serve the residents with neighborhood parks and open spaces that offer both passive and active recreation activities and facilit\u2026",
+    "known_issue": true,
+    "notes": "Expected to fail until table preprocessing is fixed"
+  },
+  {
+    "id": "Q6",
+    "type": "table_lookup",
+    "question": "Does the Coral Gables plan specify housing density limits?",
+    "k_eval": 5,
+    "hit_at_k": 0,
+    "mrr_at_k": 0.0,
+    "precision_at_k": 0.0,
+    "first_relevant_rank": null,
+    "should_hit": 0,
+    "should_not_violation": null,
+    "must_mention": [],
+    "key_phrases": [],
+    "top_snippets": [
+      "Policy COM-6.1.2. Encourage designs which will diminish groundwater withdrawals and increase high quality groundwater recharge. This policy was revised beyond the EAR recommendations due to further review. Policy COM-6.1\u2026",
+      "Goals, Objectives and Policies: Goal REC-1. The City of Coral Gables recreation system will serve the residents with neighborhood parks and open spaces that offer both passive and active recreation activities and facilit\u2026"
+    ],
+    "first_relevant_source": null,
+    "first_relevant_snippet": null,
+    "known_issue": true,
+    "notes": "Expected to fail until table preprocessing is fixed"
+  }
+]

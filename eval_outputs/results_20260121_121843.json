@@ -1,0 +1,149 @@
+[
+  {
+    "id": "Q1",
+    "type": "exact_lookup",
+    "question": "What does the document say about Policy ADM-1.5.3?",
+    "k_eval": 5,
+    "hit_at_k": 0,
+    "mrr_at_k": 0.0,
+    "precision_at_k": 0.0,
+    "first_relevant_rank": null,
+    "should_hit": null,
+    "should_not_violation": 0,
+    "must_mention": [
+      "ADM-1.5.3"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "\", \"Objective HOU-1.7.\", \"Policy HOU-1.7.2.\"], \"text\": \"The City will partner with other local governments in the administration of affordable/attainable housing program, allocation of trust fund monies, etc. implemented\u2026",
+      "\", \"Objective EDU-1.2.\", \"Policy EDU-1.2.3.\"], \"block_type\": \"paragraph\", \"block_index\": 700, \"text\": \"The development\u2019s impact is mitigated, proportionate to the demand for public schools it created, pursuant to a Propo\u2026"
+    ],
+    "first_relevant_source": null,
+    "first_relevant_snippet": null,
+    "known_issue": true,
+    "notes": "Reference is wrong"
+  },
+  {
+    "id": "Q2",
+    "type": "policy_lookup",
+    "question": "What are the residential density limits in the coastal area east of Old Cutler Road?",
+    "k_eval": 5,
+    "hit_at_k": 0,
+    "mrr_at_k": 0.0,
+    "precision_at_k": 0.0,
+    "first_relevant_rank": null,
+    "should_hit": null,
+    "should_not_violation": null,
+    "must_mention": [
+      "six",
+      "dwelling units",
+      "Old Cutler Road"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "| Per the Zoning Code. |\\n| Multi-Family Low Density. | Multi-family residential of low height and density. | Maximum 20 units/acre, or 25 units/acre with architectural incentives per the Zoning Code. | Up to 50\u2019 maximum\u2026",
+      "Residential Land Uses. | Table FLU-1. Residential Land Uses. | Table FLU-1. Residential Land Uses. | Table FLU-1. Residential Land Uses. |\\n| --- | --- | --- | --- |\\n| Classification | Description | Density / Intensity \u2026"
+    ],
+    "first_relevant_source": null,
+    "first_relevant_snippet": null,
+    "known_issue": false,
+    "notes": "Previously returned correct answer but slow / verbose"
+  },
+  {
+    "id": "Q3",
+    "type": "general_summary",
+    "question": "How does the plan describe the process for amending the Comprehensive Plan?",
+    "k_eval": 5,
+    "hit_at_k": 0,
+    "mrr_at_k": 0.0,
+    "precision_at_k": 0.0,
+    "first_relevant_rank": null,
+    "should_hit": 0,
+    "should_not_violation": null,
+    "must_mention": [
+      "public",
+      "development procedures manual"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "\", \"Objective GOV-3.2.\"], \"text\": \"The comprehensive planning process is continuous and dynamic in nature. Maintaining the effectiveness of the plan requires its periodic review. This program, required under Section 163,\u2026",
+      "\", \"Objective FLU-1.1.\", \"Policy FLU-1.1.11.\"], \"block_type\": \"paragraph\", \"block_index\": 96, \"text\": \"Implement Planned Area Development (PAD) standards to encourage quality development, public benefits and promote comp\u2026"
+    ],
+    "first_relevant_source": null,
+    "first_relevant_snippet": null,
+    "known_issue": false,
+    "notes": "General summary question (not exact ID)"
+  },
+  {
+    "id": "Q4",
+    "type": "broad_topic",
+    "question": "What does the plan say about affordable housing?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 1.0,
+    "precision_at_k": 0.6,
+    "first_relevant_rank": 1,
+    "should_hit": 1,
+    "should_not_violation": null,
+    "must_mention": [],
+    "key_phrases": [
+      "affordable housing",
+      "housing opportunities"
+    ],
+    "top_snippets": [
+      "This may include partnerships between the City and other local governments, affordable housing agencies, etc. The City shall examine a multi-pronged approach to address the City\u2019s fair share of affordable housing which m\u2026",
+      "| Per the Zoning Code. |\\n| Multi-Family Low Density. | Multi-family residential of low height and density. | Maximum 20 units/acre, or 25 units/acre with architectural incentives per the Zoning Code. | Up to 50\u2019 maximum\u2026"
+    ],
+    "first_relevant_source": "blocks.jsonl",
+    "first_relevant_snippet": "This may include partnerships between the City and other local governments, affordable housing agencies, etc. The City shall examine a multi-pronged approach to address the City\u2019s fair share of affordable housing which m\u2026",
+    "known_issue": false,
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q5",
+    "type": "table_lookup",
+    "question": "What is in the table showing Recreation facilities radius standard?",
+    "k_eval": 5,
+    "hit_at_k": 1,
+    "mrr_at_k": 0.3333,
+    "precision_at_k": 0.2,
+    "first_relevant_rank": 3,
+    "should_hit": null,
+    "should_not_violation": null,
+    "must_mention": [
+      "Park Type",
+      "Service Radius"
+    ],
+    "key_phrases": [],
+    "top_snippets": [
+      "| | |\\n| Education | Primary and secondary schools, both public and private. | Primary and secondary schools, both public and private. | Maximum F.A.R. of 2.0. | Per the Zoning Code. |\\n| Parks and Recreation | Public/pr\u2026",
+      "A maximum of 125 units/acre shall be allowed. Density shall be unlimited for properties within the Central Business District (CBD) and the Design & Innovation District.\\n\\nThe proportionate mix of uses shall be reviewed \u2026"
+    ],
+    "first_relevant_source": "blocks.jsonl",
+    "first_relevant_snippet": "\", \"Objective REC-1.1.\", \"Policy REC-1.1.1.\"], \"text\": \"Maintain the existing level of services (LOS) provided by recreation programs and activities to meet the continuing needs of all residents. The minimum acceptable L\u2026",
+    "known_issue": true,
+    "notes": "Expected to fail until table preprocessing is fixed"
+  },
+  {
+    "id": "Q6",
+    "type": "table_lookup",
+    "question": "Does the Coral Gables plan specify housing density limits?",
+    "k_eval": 5,
+    "hit_at_k": 0,
+    "mrr_at_k": 0.0,
+    "precision_at_k": 0.0,
+    "first_relevant_rank": null,
+    "should_hit": 0,
+    "should_not_violation": null,
+    "must_mention": [],
+    "key_phrases": [],
+    "top_snippets": [
+      "\", \"Objective CIE-1.2.\", \"Policy CIE-1.2.1.\"], \"text\": \"Drainage LOS. The minimum acceptable Flood Protection LOS standards for the City shall be protection from the degree of flooding that would result for duration of o\u2026",
+      "\", \"Objective COM-4.1.\", \"Policy COM-4.1.5.\"], \"block_type\": \"paragraph\", \"block_index\": 509, \"text\": \"The minimum acceptable Flood Protection LOS standards for the City shall be protection from the degree of flooding th\u2026"
+    ],
+    "first_relevant_source": null,
+    "first_relevant_snippet": null,
+    "known_issue": true,
+    "notes": "Expected to fail until table preprocessing is fixed"
+  }
+]

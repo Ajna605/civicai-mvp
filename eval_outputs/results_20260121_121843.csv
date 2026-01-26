@@ -1,0 +1,7 @@
+id,type,k_eval,hit_at_k,mrr_at_k,precision_at_k,first_relevant_rank,should_hit,should_not_violation,known_issue,notes
+Q1,exact_lookup,5,0,0.0,0.0,,,0,True,Reference is wrong
+Q2,policy_lookup,5,0,0.0,0.0,,,,False,Previously returned correct answer but slow / verbose
+Q3,general_summary,5,0,0.0,0.0,,0,,False,General summary question (not exact ID)
+Q4,broad_topic,5,1,1.0,0.6,1,1,,False,Tests multi-chunk retrieval
+Q5,table_lookup,5,1,0.3333,0.2,3,,,True,Expected to fail until table preprocessing is fixed
+Q6,table_lookup,5,0,0.0,0.0,,0,,True,Expected to fail until table preprocessing is fixed

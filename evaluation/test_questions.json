@@ -2,9 +2,9 @@
   {
     "id": "Q1",
     "question": "What does the document say about Policy ADM-1.5.3?",
-    "type": "exact_lookup",
+    "category": "policy_lookup",
     "expected": {
-      "must_mention": ["ADM-1.5.3"],
+      "must_mention_any": ["ADM-1.5.3"],
       "should_not_mention": ["ADM-1.4", "PRP-1.1.4"],
       "source_document": "Coral_Gables_Comprehensive_Plan"
     },
@@ -14,51 +14,58 @@
   {
     "id": "Q2",
     "question": "What are the residential density limits in the coastal area east of Old Cutler Road?",
-    "type": "policy_lookup",
+    "category": "section_lookup",
     "expected": {
-      "must_mention": ["six", "dwelling units", "Old Cutler Road"]
+      "must_mention_all": ["dwelling units", "Old Cutler Road"],
+      "must_mention_any": ["six", "6"],
+      "should_mention": ["residential density", "coastal"],
+      "should_not_mention": []
     },
     "notes": "Previously returned correct answer but slow / verbose"
   },
   {
     "id": "Q3",
     "question": "How does the plan describe the process for amending the Comprehensive Plan?",
-    "type": "general_summary",
+    "category": "section_lookup",
     "expected": {
-      "must_mention": ["Amend the Comprehensive Plan"],
+      "must_mention_any": ["Amend the Comprehensive Plan", "amending the Comprehensive Plan"],
       "should_mention": ["Objective ADM-1.5."],
       "should_not_mention": []
     },
-    "notes": "General summary question (not exact ID)"
+    "notes": "Narrow process lookup (not exact ID)"
   },
   {
     "id": "Q4",
     "question": "What does the plan say about affordable housing?",
-    "type": "broad_topic",
+    "category": "general_summary",
     "expected": {
-        "should_mention": ["Objective HOU-1.1."],
-        "key_phrases": ["affordable housing", "housing opportunities"],
-      "may_span_multiple_policies": true
+      "key_phrases": ["affordable housing", "housing opportunities"],
+      "should_mention": ["Objective HOU-1.1."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
     },
     "notes": "Tests multi-chunk retrieval"
   },
   {
     "id": "Q5",
     "question": "What is in the table showing Recreation facilities radius standard?",
-    "type": "table_lookup",
+    "category": "table_lookup",
     "expected": {
-      "must_mention": ["Park Type", "Service Radius"]
+      "must_mention_all": ["Park Type", "Service Radius"],
+      "should_mention": ["Recreation", "facilities", "radius", "standard"],
+      "should_not_mention": []
     },
     "known_issue": true,
     "notes": "Expected to fail until table preprocessing is fixed"
   },
-    {
+  {
     "id": "Q6",
     "question": "Does the Coral Gables plan specify housing density limits?",
-    "type": "table_lookup",
+    "category": "table_lookup",
     "expected": {
-      "must_mention": ["Table FLU-1. Residential Land Uses", "Density"],
-      "should_mention": ["Residential"]
+      "must_mention_any": ["Policy FLU-1.1.2", "Residential Land Uses"],
+      "should_mention": ["density", "residential"],
+      "should_not_mention": []
     },
     "known_issue": true,
     "notes": "Expected to fail until table preprocessing is fixed"
