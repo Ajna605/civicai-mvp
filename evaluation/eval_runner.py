@@ -20,7 +20,7 @@ import csv
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 import re
 from collections import Counter, defaultdict
 

@@ -22,11 +22,13 @@ if __name__ == "__main__":
     # q = "Explain what is mentioned in Policy FLU-1.1.2."
     # q = "What does the document say about Policy ADM-1.5.3.?"
     # q = "Who are partners of the City?"
+    #Q2
     # q = "What are the residential density limits in the coastal area east of Old Cutler Road"
+    q = "What is the restriction in regard to residential development throughout the coastal area of East of Old Cutler Road?"
     # Q5
     # q =  "What is in the table showing Recreation facilities radius standard?"
     #Q6
-    q = "Does the Coral Gables plan specify housing density limits?"
+    # q = "Does the Coral Gables plan specify housing density limits?"
 
     print(query_civicai(q))
     end = time.time()

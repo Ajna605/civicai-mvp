@@ -8,8 +8,20 @@
       "should_not_mention": ["ADM-1.4", "PRP-1.1.4"],
       "source_document": "Coral_Gables_Comprehensive_Plan"
     },
-    "known_issue": true,
+    "known_issue": false,
     "notes": "Reference is wrong"
+  },
+  {
+    "id": "Q1.1",
+    "question": "What does the document say about Objective EDU-1.1.?",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["EDU-1.1."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": ""
   },
   {
     "id": "Q2",
@@ -24,18 +36,29 @@
     "notes": "Previously returned correct answer but slow / verbose"
   },
   {
-    "id": "Q3",
-    "question": "How does the plan describe the process for amending the Comprehensive Plan?",
+    "id": "Q2.1",
+    "question": "Return marina-related policies",
     "category": "section_lookup",
     "expected": {
-      "must_mention_any": ["Amend the Comprehensive Plan", "amending the Comprehensive Plan"],
+      "must_mention_any": ["marina"],
+      "should_mention": ["marina"],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q3",
+    "question": "How does the plan describe the process for amending the Comprehensive Plan?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["amend", "amending", "amended"],
       "should_mention": ["Objective ADM-1.5."],
       "should_not_mention": []
     },
     "notes": "Narrow process lookup (not exact ID)"
   },
   {
-    "id": "Q4",
+    "id": "Q3.1",
     "question": "What does the plan say about affordable housing?",
     "category": "general_summary",
     "expected": {
@@ -47,27 +70,54 @@
     "notes": "Tests multi-chunk retrieval"
   },
   {
-    "id": "Q5",
+    "id": "Q4",
     "question": "What is in the table showing Recreation facilities radius standard?",
     "category": "table_lookup",
     "expected": {
-      "must_mention_all": ["Park Type", "Service Radius"],
+      "must_mention_all": ["Recreation facilities radius standard"],
       "should_mention": ["Recreation", "facilities", "radius", "standard"],
       "should_not_mention": []
     },
-    "known_issue": true,
-    "notes": "Expected to fail until table preprocessing is fixed"
+    "known_issue": false,
+    "notes": "Mentions exact table name - but not retrieved"
   },
   {
-    "id": "Q6",
+    "id": "Q4.1",
+    "question": "What is in the radius standard of Urban Open Spaces ?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["Park Type", "recreation"],
+      "should_mention": ["Recreation", "facilities", "radius", "standard:"],
+      "should_not_mention": []
+    },
+    "known_issue": false,
+    "notes": "Mentions table content - but not retrieved"
+  },
+  {
+    "id": "Q4.2",
     "question": "Does the Coral Gables plan specify housing density limits?",
     "category": "table_lookup",
     "expected": {
-      "must_mention_any": ["Policy FLU-1.1.2", "Residential Land Uses"],
-      "should_mention": ["density", "residential"],
+      "must_mention_all": ["density", "Residential Land Uses"],
+      "must_mention_any": ["Policy FLU-1.1.2", "Residential Land Uses", "residential"],
+      "should_mention": ["density", "residential", "Residential"],
       "should_not_mention": []
     },
-    "known_issue": true,
-    "notes": "Expected to fail until table preprocessing is fixed"
+    "known_issue": false,
+    "notes": "Paraphrased table name - retrieved"
+  },
+  
+  {
+    "id": "Q4.3",
+    "question": "What is the required land density for Single-family detached homes?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["single-family", "acre"],
+      "must_mention_any": ["six", "6"],
+      "should_mention": ["residential"],
+      "should_not_mention": []
+    },
+    "notes": "Table content part of query - good results"
   }
+  
 ]
