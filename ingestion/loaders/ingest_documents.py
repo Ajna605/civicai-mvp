@@ -1,11 +1,13 @@
 # ingestion/load_docs.py
 from __future__ import annotations
-
+import argparse
 import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+from pathlib import Path
+from ingestion.normalize.normalize_pdf import normalize_pdf
 
 from docx import Document
 from docx.oxml.table import CT_Tbl
@@ -15,15 +17,20 @@ from docx.text.paragraph import Paragraph
 
 
 # ----------------------------
-# Paths (repo-aware)
+# Arguments and paths
 # ----------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RAW_DIR = PROJECT_ROOT / "data" / "raw"
-PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
-PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+NORMALIZED_DIR = Path("data/normalized")
+RAW_DIR = Path("data/raw")
 
-DEFAULT_OUT = PROCESSED_DIR / "blocks.jsonl"
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--source", choices=["pdf", "docx"], required=True)
+    p.add_argument("--input", required=True, help="Path to the document")
+    p.add_argument("--out-blocks", default=None, help="blocks.jsonl output path")
+    return p.parse_args()
 
+def default_out_for(source: str) -> Path:
+    return NORMALIZED_DIR / source / "blocks.jsonl"
 
 # ----------------------------
 # Text cleanup
@@ -259,29 +266,138 @@ def extract_blocks_from_docx(docx_path: Path) -> List[Block]:
     flush_list()
     return blocks
 
+def extract_blocks_from_pdf(pdf_path: Path) -> List[Block]:
+    """
+    Adapter: PDF → NormalizedDoc → blocks
+    """
+    norm_doc = normalize_pdf(str(pdf_path))  # if normalize_pdf expects str; otherwise keep as pdf_path
+
+    blocks: List[Block] = []
+    block_index = 0
+
+    seen_table_ids = set()
+
+    for sec in norm_doc.sections:
+        # 1) Emit the SECTION block
+        blocks.append(
+            Block(
+                doc_id=norm_doc.doc_id,
+                source_path=str(pdf_path),
+                block_type="section",
+                block_index=block_index,
+                section_path=sec.heading_path,
+                text=sec.text or "",
+                extra={
+                    "page_start": sec.page_start,
+                    "page_end": sec.page_end,
+                    "section_id": getattr(sec, "section_id", None),
+                    "heading": getattr(sec, "heading", None),
+                },
+            )
+        )
+        block_index += 1
+
+        # 2) Emit TABLE blocks under that section (dedup by table_id)
+        for tbl in getattr(sec, "tables", []) or []:
+            if tbl.table_id in seen_table_ids:
+                continue
+            seen_table_ids.add(tbl.table_id)
+
+            blocks.append(
+                Block(
+                    doc_id=norm_doc.doc_id,
+                    source_path=str(pdf_path),
+                    block_type="table",
+                    block_index=block_index,
+                    section_path=sec.heading_path,  # inherit section path
+                    text=tbl.raw_text or "",
+                    extra={
+                        "caption": tbl.caption,
+                        "raw_text": tbl.raw_text,
+                        "page": tbl.page,
+                        "table_id": tbl.table_id,
+                    },
+                )
+            )
+            block_index += 1
+
+    return blocks
+
+
+    # Tables
+    for tbl in norm_doc.tables:
+        blocks.append(
+            Block(
+                doc_id=norm_doc.doc_id,
+                source_path=str(pdf_path),
+                block_type="table",
+                block_index=block_index,
+                section_path=tbl.section_path if hasattr(tbl, "section_path") else [],
+                text=tbl.raw_text,
+                extra={
+                    "caption": tbl.caption,
+                    "raw_text": tbl.raw_text,
+                    "page": tbl.page,
+                    "table_id": tbl.table_id,
+                },
+            )
+        )
+        block_index += 1
+
+    return blocks
+
+
 
 def find_docx_files() -> List[Path]:
     if not RAW_DIR.exists():
         raise FileNotFoundError(f"Expected raw data folder at: {RAW_DIR}")
     return sorted(RAW_DIR.rglob("*.docx"))
 
+def find_pdf_files() -> List[Path]:
+    if not RAW_DIR.exists():
+        raise FileNotFoundError(f"Expected raw data folder at: {RAW_DIR}")
+    return sorted(RAW_DIR.rglob("*.pdf"))
+
 
 def main() -> None:
-    docx_files = find_docx_files()
-    if not docx_files:
-        raise FileNotFoundError(f"No .docx files found under: {RAW_DIR}")
+    args = parse_args()
+
+    out_path = default_out_for(args.source)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Choose inputs
+    if args.input:
+        files = [Path(args.input)]
+        # Optional: validate extension matches source
+        if args.source == "docx" and files[0].suffix.lower() != ".docx":
+            raise ValueError(f"--source docx requires a .docx input, got: {files[0]}")
+        if args.source == "pdf" and files[0].suffix.lower() != ".pdf":
+            raise ValueError(f"--source pdf requires a .pdf input, got: {files[0]}")
+    else:
+        if args.source == "docx":
+            files = find_docx_files()
+        else:
+            files = find_pdf_files()
+
+    if not files:
+        raise FileNotFoundError(
+            f"No {args.source.upper()} files found (input={args.input!r})."
+        )
 
     total_blocks = 0
-    with open(DEFAULT_OUT, "w", encoding="utf-8") as f:
-        for docx_path in docx_files:
-            blocks = extract_blocks_from_docx(docx_path)
+    with open(out_path, "w", encoding="utf-8") as f:
+        for path in files:
+            if args.source == "docx":
+                blocks = extract_blocks_from_docx(path)
+            else:
+                blocks = extract_blocks_from_pdf(path)
+
             for b in blocks:
                 f.write(json.dumps(asdict(b), ensure_ascii=False) + "\n")
             total_blocks += len(blocks)
 
-    print(f"[load_docs] Found {len(docx_files)} .docx file(s) in {RAW_DIR}")
-    print(f"[load_docs] Wrote {total_blocks} blocks → {DEFAULT_OUT}")
-
+    print(f"[ingest_documents] Source={args.source} Files={len(files)}")
+    print(f"[ingest_documents] Wrote {total_blocks} blocks → {out_path}")
 
 if __name__ == "__main__":
     main()

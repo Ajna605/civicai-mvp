@@ -9,7 +9,9 @@ class Table:
     table_id: str
     page: int
     caption: Optional[str] = None
-    rows: Optional[List[Dict[str, Any]]] = None
+    raw_text: Optional[str] = None   # NEW: raw extracted table-ish block
+    rows: Optional[List[Dict[str, Any]]] = None  # future structured extraction
+
 
 
 @dataclass
@@ -35,6 +37,7 @@ class NormalizedDoc:
     doc_id: str
     source: SourceInfo
     sections: List[Section]
+    tables: list[Table]
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

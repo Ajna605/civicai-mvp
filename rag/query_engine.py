@@ -29,8 +29,8 @@ Answer:
 
 
 
-def query_civicai(query: str):
-    index = load_index()
+def query_civicai(query: str, index_path:str):
+    index = load_index(index_path)
     query_engine = index.as_query_engine(similarity_top_k=3, response_mode="compact")
     response = query_engine.query(query)
 
