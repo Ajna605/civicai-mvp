@@ -162,7 +162,6 @@ def extract_blocks_from_docx(docx_path: Path) -> List[Block]:
         nonlocal block_index, current_list, current_list_section
         if not current_list:
             return
-
         lines: List[str] = []
         for lvl, t in current_list:
             indent = "  " * max(lvl, 0)
@@ -291,7 +290,6 @@ def extract_blocks_from_pdf(pdf_path: Path) -> List[Block]:
                     "page_start": sec.page_start,
                     "page_end": sec.page_end,
                     "section_id": getattr(sec, "section_id", None),
-                    "heading": getattr(sec, "heading", None),
                 },
             )
         )

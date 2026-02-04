@@ -1,5 +1,5 @@
-# Clean text, preserve headings, attach metadata,
-# output standardized markdown to data/processed
+# Creates rag_chunks.jsonl and sections.jsonl
+# from blocks.jsonl
 # ingestion/preprocess.py
 from __future__ import annotations
 import argparse
@@ -7,15 +7,22 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Iterable
 
+from docx import Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
 # ----------------------------
 # Paths (repo-aware)
 # ----------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = PROJECT_ROOT / "data" / "normalized"
-# BLOCKS_FILE = PROCESSED_DIR / "blocks.jsonl"
+BLOCKS_FILE = PROCESSED_DIR / "blocks.jsonl"
+
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,13 +35,6 @@ def parse_args() -> argparse.Namespace:
                    help="Explicit path to blocks.jsonl (overrides --source)")
     p.add_argument("--out", type=str, default=None,
                    help="Explicit output path for rag_chunks.jsonl (overrides --source)")
-
-    # corpus parameters (optional but useful)
-    p.add_argument("--max-chars", type=int, default=1400)
-    p.add_argument("--overlap-chars", type=int, default=200)
-    p.add_argument("--dedupe", action="store_true", default=True)
-    p.add_argument("--no-dedupe", action="store_false", dest="dedupe")
-
     return p.parse_args()
 
 def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
@@ -111,30 +111,6 @@ def stable_hash(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 
 
-# ------------------------------------
-# Chunking + Logic for splitting by policy
-# ------------------------------------
-ITEM_RE = re.compile(
-    r"(?mi)^\s*(?:[•\-\u2022]\s*)?(?:policy|objective|goal|program)?\s*"
-    r"([A-Z]{2,8}-\d+(?:\.\d+)+)\.?\s*(.*)$"
-)
-def split_into_policy_items(text: str):
-    """
-    Split a section into (code, item_text) chunks.
-    """
-    matches = list(ITEM_RE.finditer(text))
-    out = []
-
-    for i, m in enumerate(matches):
-        code = m.group(1)
-        start = m.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        item_text = text[start:end].strip()
-        item_text = f"{code}\n\n{item_text}"
-        out.append((code, item_text))
-
-    return out
-
 
 def chunk_text(text: str, max_chars: int = 1400, overlap_chars: int = 200) -> List[str]:
     """
@@ -194,20 +170,300 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
                 continue
             yield json.loads(line)
 
+# ----------------------------
+# ID detection
+# ----------------------------
+
+def extract_code_from_title(title: str | None) -> str | None:
+    if not title:
+        return None
+    m = re.search(r"\b([A-Z]{2,8}-\d+(?:\.\d+)*)\b", title)
+    return m.group(1) if m else None
+
+
+# ----------------------------
+# List detection + nesting
+# ----------------------------
+def is_list_paragraph(p: Paragraph) -> bool:
+    style_name = (p.style.name or "").lower() if p.style else ""
+    return ("list" in style_name) or ("bullet" in style_name) or ("number" in style_name)
+
+
+def get_list_level(p: Paragraph) -> int:
+    """
+    Best-effort nesting level via numbering properties; returns 0 if unknown.
+    """
+    try:
+        numPr = p._p.pPr.numPr  # type: ignore[attr-defined]
+        if numPr is None or numPr.ilvl is None:
+            return 0
+        return int(numPr.ilvl.val)
+    except Exception:
+        return 0
+
+def is_heading_paragraph(p: Paragraph) -> bool:
+    style_name = (p.style.name or "") if p.style else ""
+    return style_name.lower().startswith("heading")
+
+def get_heading_level(p: Paragraph) -> Optional[int]:
+    """
+    Parse 'Heading 2' -> 2, returns None if not heading.
+    """
+    if not is_heading_paragraph(p):
+        return None
+    style = p.style.name if p.style else ""
+    m = re.search(r"(\d+)", style or "")
+    return int(m.group(1)) if m else 1
+
+# ----------------------------
+# Iterate blocks in doc order
+# ----------------------------
+def iter_block_items(doc: Document) -> Iterator[Tuple[str, Any]]:
+    """
+    Yield ("p", Paragraph) or ("tbl", Table) in the order they appear.
+    """
+    parent = doc.element.body
+    for child in parent.iterchildren():
+        if isinstance(child, CT_P):
+            yield "p", Paragraph(child, doc)
+        elif isinstance(child, CT_Tbl):
+            yield "tbl", Table(child, doc)
+
+# ----------------------------
+# Table formatting
+# ----------------------------
+def table_to_markdown(tbl: Table) -> str:
+    rows: List[List[str]] = []
+    for row in tbl.rows:
+        rows.append([clean_text(cell.text) for cell in row.cells])
+
+    rows = [r for r in rows if any(c.strip() for c in r)]
+    if not rows:
+        return ""
+
+    n_cols = max(len(r) for r in rows)
+    rows = [r + [""] * (n_cols - len(r)) for r in rows]
+
+    first = rows[0]
+    headerish = all(c.strip() for c in first) and sum(len(c) for c in first) <= 200
+
+    if headerish:
+        header = first
+        body = rows[1:]
+    else:
+        header = [f"col_{i+1}" for i in range(n_cols)]
+        body = rows
+
+    md: List[str] = []
+    md.append("| " + " | ".join(header) + " |")
+    md.append("| " + " | ".join(["---"] * n_cols) + " |")
+    for r in body:
+        md.append("| " + " | ".join((c if c else " ") for c in r) + " |")
+    return "\n".join(md)
+
+# ----------------------------
+# Condensed "section" schema
+# ----------------------------
+@dataclass
+class SectionRecord:
+    doc_id: str
+    source_path: str
+    section_index: int
+
+    # Heading stack info
+    path: List[str]          # ["Administration Element", "Goal ADM-1.", "Objective ADM-1.1.", "Policy ADM-1.1.2."]
+    path_text: str           # "Administration Element > Goal ADM-1. > Objective ADM-1.1. > Policy ADM-1.1.2."
+    title: str               # "Policy ADM-1.1.2."
+    heading_level: Optional[int]
+
+    # Content under that heading
+    content: str             # paragraphs/lists/tables combined
+    extra: Dict[str, Any]
+
+
+
+# ----------------------------
+# Extraction (CONDENSED)
+# ----------------------------
+def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
+    doc = Document(str(docx_path))
+    doc_id = docx_path.stem
+
+    # Heading stack: list of (level:int, text:str)
+    heading_stack: List[Tuple[int, str]] = []
+
+    # Accumulate list items before flushing into current section content
+    current_list: List[Tuple[int, str]] = []
+
+    # Current section accumulator
+    current_section_title: Optional[str] = None
+    current_section_level: Optional[int] = None
+    current_section_path: List[str] = []
+    content_parts: List[str] = []
+
+    sections: List[SectionRecord] = []
+    section_index = 0
+
+    def flush_list_into_content() -> None:
+        nonlocal current_list, content_parts
+        if not current_list:
+            return
+        lines: List[str] = []
+        for lvl, t in current_list:
+            indent = "  " * max(lvl, 0)
+            lines.append(f"{indent}- {t}")
+        content_parts.append(clean_text("\n".join(lines)))
+        current_list = []
+
+    def flush_section() -> None:
+        nonlocal section_index, content_parts, current_section_title, current_section_path, current_section_level
+        flush_list_into_content()
+        content = clean_text("\n\n".join([p for p in content_parts if p.strip()]))
+
+        # Only write a section if it has a heading AND some content
+        if current_section_title and content:
+            path_text = " > ".join(current_section_path) if current_section_path else current_section_title
+            sections.append(
+                SectionRecord(
+                    doc_id=doc_id,
+                    source_path=str(docx_path),
+                    section_index=section_index,
+                    path=current_section_path.copy(),
+                    path_text=path_text,
+                    title=current_section_title,
+                    heading_level=current_section_level,
+                    content=content,
+                    extra={},
+                )
+            )
+            section_index += 1
+
+        # reset content accumulator (heading info set when next heading arrives)
+        content_parts = []
+
+    for kind, obj in iter_block_items(doc):
+        if kind == "p":
+            p: Paragraph = obj
+            txt = clean_text(p.text)
+            if not txt:
+                continue
+
+            lvl = get_heading_level(p)
+
+            # --- Heading encountered ---
+            if lvl is not None:
+                # finish prior section (if any)
+                flush_section()
+
+                # Maintain correct hierarchy:
+                # pop while last_level >= current_level (siblings replace each other)
+                while heading_stack and heading_stack[-1][0] >= lvl:
+                    heading_stack.pop()
+                heading_stack.append((lvl, txt))
+
+                current_section_title = txt
+                current_section_level = lvl
+                current_section_path = [t for _, t in heading_stack]
+
+                continue
+
+            # --- List paragraph ---
+            if is_list_paragraph(p):
+                current_list.append((get_list_level(p), txt))
+                continue
+
+            # --- Normal paragraph ---
+            flush_list_into_content()
+            content_parts.append(txt)
+
+        elif kind == "tbl":
+            # table belongs to current section
+            flush_list_into_content()
+            tbl: Table = obj
+            md = table_to_markdown(tbl)
+            if md.strip():
+                content_parts.append(md)
+
+    # flush last section at EOF
+    flush_section()
+    return sections
+
+def extract_sections_from_pdf(pdf_path: Path) -> List[SectionRecord]:
+    norm = normalize_pdf(str(pdf_path))
+    doc_id = norm.doc_id
+
+    sections: List[SectionRecord] = []
+    section_index = 0
+
+    for sec in norm.sections:
+        content_parts = []
+
+        body = clean_text(sec.text or "")
+        if body:
+            content_parts.append(body)
+
+        # include tables (optional)
+        if getattr(sec, "tables", None):
+            for t in sec.tables:
+                if t.raw_text:
+                    caption = (t.caption or "").strip()
+                    table_text = t.raw_text.strip()
+                    if caption:
+                        content_parts.append(f"{caption}\n{table_text}")
+                    else:
+                        content_parts.append(table_text)
+
+        content = clean_text("\n\n".join([p for p in content_parts if p.strip()]))
+        # retrieval_text = f"{title}\nID: {code}\n{path_text}\n\n{content}"
+
+        # only write if we have a heading path and some content
+        if not sec.heading_path or not content:
+            continue
+
+        title = sec.heading_path[-1]
+        path = sec.heading_path
+        path_text = " > ".join(path)
+
+        sections.append(
+            SectionRecord(
+                doc_id=doc_id,
+                source_path=str(pdf_path),
+                section_index=section_index,
+                path=path,
+                path_text=path_text,
+                title=title,
+                heading_level=len(path),   # proxy; PDFs don’t have true levels
+                content=content,
+                extra={
+                    "page_start": sec.page_start,
+                    "page_end": sec.page_end,
+                    "section_id": getattr(sec, "section_id", None),
+                },
+            )
+        )
+        section_index += 1
+
+    return sections
+
 
 # ----------------------------
 # Main preprocess
 # ----------------------------
 def main() -> None:
     args = parse_args()
-    BLOCKS_FILE, OUT_FILE = resolve_paths(args)
-    print(BLOCKS_FILE, OUT_FILE)
-    if not BLOCKS_FILE.exists():
+    blocks_file, chunks_file = resolve_paths(args)   # keep your resolve_paths signature
+    sections_file = chunks_file.parent / "sections.jsonl"  # same folder as rag_chunks
+
+    print("blocks:", blocks_file)
+    print("chunks:", chunks_file)
+    print("sections:", sections_file)
+
+    if not blocks_file.exists():
         raise FileNotFoundError(
-            f"Missing {BLOCKS_FILE}. Run ingestion/load_docs.py first to create blocks.jsonl."
+            f"Missing {blocks_file}. Run ingestion first to create blocks.jsonl."
         )
 
-    OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    chunks_file.parent.mkdir(parents=True, exist_ok=True)
 
     max_chars = 1400
     overlap_chars = 200
@@ -216,30 +472,64 @@ def main() -> None:
     seen: set[str] = set()
     total_blocks = 0
     total_chunks = 0
+    total_sections = 0
 
-    with open(OUT_FILE, "w", encoding="utf-8") as out_f:
-        for block in read_jsonl(BLOCKS_FILE):
+    section_index = 0  # for sections.jsonl
+
+    with open(chunks_file, "w", encoding="utf-8") as chunks_f, \
+         open(sections_file, "w", encoding="utf-8") as sections_f:
+
+        for block in read_jsonl(blocks_file):
             total_blocks += 1
 
             block_type = block.get("block_type", "unknown")
-            section_path = block.get("section_path", [])
+            section_path = block.get("section_path", []) or []
             doc_id = block.get("doc_id", "doc")
             block_index = block.get("block_index", 0)
             source_path = block.get("source_path")
-
-            block_type = block.get("block_type", "unknown")
-            # IMPORTANT: use a mutable copy so we can add fields
             extra = dict(block.get("extra", {}) or {})
+            text = block.get("text", "") or ""
 
-            # default text
-            text = block.get("text", "")
+            # ----------------------------
+            # 1) Build sections.jsonl
+            # ----------------------------
+            if block_type == "section":
+                # “condensed section” record from the block
+                title = section_path[-1] if section_path else None
+                path_text = " > ".join(section_path) if section_path else (title or "")
 
-            # If this is a table block, prepend caption and compute table metadata
+                # For sections.jsonl, store content cleanly
+                content = clean_text(text)
+
+                if title and content:
+                    sec_rec = {
+                        "doc_id": doc_id,
+                        "source_path": source_path,
+                        "section_index": section_index,
+                        "path": section_path,
+                        "path_text": path_text,
+                        "title": title,
+                        "heading_level": len(section_path) if section_path else None,
+                        "content": content,
+                        "extra": {
+                            **extra,
+                            # optional but useful for PDF traceability
+                            "block_index": block_index,
+                        },
+                    }
+                    sections_f.write(json.dumps(sec_rec, ensure_ascii=False) + "\n")
+                    total_sections += 1
+                    section_index += 1
+
+            # ----------------------------
+            # 2) Build rag_chunks.jsonl
+            # ----------------------------
+
+            # Table shaping + filtering
             if block_type == "table":
                 caption = extra.get("caption") or extra.get("table_caption")
                 raw_table = extra.get("raw_text") or extra.get("table_raw_text") or text
 
-                # NEW: guard against bullet-lists pretending to be tables
                 if not looks_like_table(raw_table):
                     continue
 
@@ -250,45 +540,23 @@ def main() -> None:
                 extra["table_rows"] = rows
                 extra["table_cols"] = cols
 
-                # optional: only index Tier A tables (recommended)
                 if tier != "A":
                     continue
 
-                # make sure caption is attached to content for retrieval
-                if caption:
-                    text = f"{caption}\n\n{raw_table}"
-                else:
-                    text = raw_table
+                text = f"{caption}\n\n{raw_table}" if caption else raw_table
 
-            if block_type == "section":
-                for code, item_text in split_into_policy_items(text):
-                    chunk_obj = {
-                        "doc_id": doc_id,
-                        "block_type": "policy",
-                        "block_index": block_index,
-                        "section_path": section_path,
-                        "source_path": source_path,
-                        "text": item_text,
-                        "extra": {
-                            **extra,
-                            "chunk_kind": "policy_item",
-                            "policy_code": code,
-                        },
-                    }
-
-                    out_f.write(json.dumps(chunk_obj, ensure_ascii=False) + "\n")
-                    total_chunks += 1
-
+            # Policy items (your splitter) — works only if code exists in enriched text
+            if block_type == "section" and section_path:
+                text = " > ".join(section_path) + "\n\n" + text                
+                total_chunks += 1
+            
             text = clean_text(text)
-
             if not text:
                 continue
 
-            # Optional: skip extremely short headings
             if block_type == "heading" and len(text) < 3:
                 continue
 
-            
             chunks = chunk_text(text, max_chars=max_chars, overlap_chars=overlap_chars)
             for i, ch in enumerate(chunks):
                 item = {
@@ -303,7 +571,6 @@ def main() -> None:
                 }
 
                 if dedupe:
-                    # Dedupe by section+type+text (good default for repeated headers/footers)
                     key = (
                         (doc_id or "")
                         + "|"
@@ -318,12 +585,14 @@ def main() -> None:
                         continue
                     seen.add(h)
 
-                out_f.write(json.dumps(item, ensure_ascii=False) + "\n")
+                chunks_f.write(json.dumps(item, ensure_ascii=False) + "\n")
                 total_chunks += 1
 
-    print(f"[preprocess] Read {total_blocks} blocks from {BLOCKS_FILE}")
-    print(f"[preprocess] Wrote {total_chunks} chunks → {OUT_FILE}")
-    print(f"[preprocess] Params: max_chars={max_chars}, overlap_chars={overlap_chars}, dedupe={dedupe}")
+    print(f"[build] Read {total_blocks} blocks from {blocks_file}")
+    print(f"[build] Wrote {total_chunks} chunks → {chunks_file}")
+    print(f"[build] Wrote {total_sections} sections → {sections_file}")
+    print(f"[build] Params: max_chars={max_chars}, overlap_chars={overlap_chars}, dedupe={dedupe}")
+
 
 
 if __name__ == "__main__":

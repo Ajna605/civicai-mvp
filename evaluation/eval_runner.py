@@ -698,7 +698,7 @@ def main():
     ap.add_argument("--diag_k", type=int, default=200, help="Diagnostic retrieval depth for lookup categories")
     ap.add_argument("--out_dir", default="eval_outputs")
     ap.add_argument("--fail_on_gate", action="store_true", help="Exit nonzero if acceptance criteria fail")
-    ap.add_argument("--format", default="docx")
+    ap.add_argument("--format", default="docx", required = True)
 
     args = ap.parse_args()
 

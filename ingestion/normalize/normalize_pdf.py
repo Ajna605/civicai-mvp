@@ -3,7 +3,7 @@ import os
 from typing import List, Tuple, Optional, Dict
 from ingestion.loaders.pdf_loader import pages_to_sections, extract_tables_from_page_layout, extract_pdf_pages, _sha256_file
 from datetime import datetime
-from ingestion.schema.normalized_doc import NormalizedDoc, SourceInfo, Section, Table
+from ingestion.schema.document_schema import NormalizedDoc, SourceInfo, Section, Table
 import fitz  # PyMuPDF
 
 def normalize_pdf(pdf_path: str, doc_id: str | None = None) -> NormalizedDoc:
