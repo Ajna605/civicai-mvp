@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 from docx import Document
 from docx.oxml.table import CT_Tbl
@@ -22,7 +22,6 @@ RAW_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-# Condensed output: one record per heading section (Goal/Objective/Policy/etc.)
 DEFAULT_OUT = PROCESSED_DIR / "sections.jsonl"
 
 
@@ -30,7 +29,7 @@ DEFAULT_OUT = PROCESSED_DIR / "sections.jsonl"
 # Text cleanup
 # ----------------------------
 def clean_text(s: str) -> str:
-    s = s.replace("\u00a0", " ")  # non-breaking space
+    s = s.replace("\u00a0", " ")
     s = s.replace("\r\n", "\n")
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
@@ -41,9 +40,6 @@ def clean_text(s: str) -> str:
 # Iterate blocks in doc order
 # ----------------------------
 def iter_block_items(doc: Document) -> Iterator[Tuple[str, Any]]:
-    """
-    Yield ("p", Paragraph) or ("tbl", Table) in the order they appear.
-    """
     parent = doc.element.body
     for child in parent.iterchildren():
         if isinstance(child, CT_P):
@@ -53,7 +49,7 @@ def iter_block_items(doc: Document) -> Iterator[Tuple[str, Any]]:
 
 
 # ----------------------------
-# List detection + nesting
+# Lists / headings
 # ----------------------------
 def is_list_paragraph(p: Paragraph) -> bool:
     style_name = (p.style.name or "").lower() if p.style else ""
@@ -61,9 +57,6 @@ def is_list_paragraph(p: Paragraph) -> bool:
 
 
 def get_list_level(p: Paragraph) -> int:
-    """
-    Best-effort nesting level via numbering properties; returns 0 if unknown.
-    """
     try:
         numPr = p._p.pPr.numPr  # type: ignore[attr-defined]
         if numPr is None or numPr.ilvl is None:
@@ -79,9 +72,6 @@ def is_heading_paragraph(p: Paragraph) -> bool:
 
 
 def get_heading_level(p: Paragraph) -> Optional[int]:
-    """
-    Parse 'Heading 2' -> 2, returns None if not heading.
-    """
     if not is_heading_paragraph(p):
         return None
     style = p.style.name if p.style else ""
@@ -90,23 +80,33 @@ def get_heading_level(p: Paragraph) -> Optional[int]:
 
 
 # ----------------------------
-# Table formatting
+# Tables -> structured JSON
 # ----------------------------
-def table_to_markdown(tbl: Table) -> str:
+def table_to_struct(tbl: Table) -> Dict[str, Any]:
+    """
+    Returns:
+      {
+        "header": [..],
+        "rows": [[..], [..], ...],
+        "n_rows": int,
+        "n_cols": int
+      }
+    """
     rows: List[List[str]] = []
     for row in tbl.rows:
-        rows.append([clean_text(cell.text) for cell in row.cells])
+        cells = [clean_text(cell.text) for cell in row.cells]
+        rows.append(cells)
 
+    # drop empty rows
     rows = [r for r in rows if any(c.strip() for c in r)]
     if not rows:
-        return ""
+        return {"header": [], "rows": [], "n_rows": 0, "n_cols": 0}
 
     n_cols = max(len(r) for r in rows)
     rows = [r + [""] * (n_cols - len(r)) for r in rows]
 
     first = rows[0]
-    headerish = all(c.strip() for c in first) and sum(len(c) for c in first) <= 200
-
+    headerish = all(c.strip() for c in first) and sum(len(c) for c in first) <= 240
     if headerish:
         header = first
         body = rows[1:]
@@ -114,16 +114,16 @@ def table_to_markdown(tbl: Table) -> str:
         header = [f"col_{i+1}" for i in range(n_cols)]
         body = rows
 
-    md: List[str] = []
-    md.append("| " + " | ".join(header) + " |")
-    md.append("| " + " | ".join(["---"] * n_cols) + " |")
-    for r in body:
-        md.append("| " + " | ".join((c if c else " ") for c in r) + " |")
-    return "\n".join(md)
+    return {
+        "header": header,
+        "rows": body,
+        "n_rows": len(body),
+        "n_cols": n_cols,
+    }
 
 
 # ----------------------------
-# Condensed "section" schema
+# Output schema
 # ----------------------------
 @dataclass
 class SectionRecord:
@@ -131,63 +131,56 @@ class SectionRecord:
     source_path: str
     section_index: int
 
-    # Heading stack info
-    path: List[str]          # ["Administration Element", "Goal ADM-1.", "Objective ADM-1.1.", "Policy ADM-1.1.2."]
-    path_text: str           # "Administration Element > Goal ADM-1. > Objective ADM-1.1. > Policy ADM-1.1.2."
-    title: str               # "Policy ADM-1.1.2."
+    path: List[str]
+    path_text: str
+    title: str
     heading_level: Optional[int]
 
-    # Content under that heading
-    content: str             # paragraphs/lists/tables combined
-    extra: Dict[str, Any]
+    # Instead of one big string, store structured blocks
+    blocks: List[Dict[str, Any]]  # each: {"type": "...", ...}
 
 
 def find_docx_files() -> List[Path]:
     if not RAW_DIR.exists():
-        raise FileNotFoundError(f"Expected raw data folder at: {RAW_DIR}")
+        raise FileNotFoundError(f"Expected raw folder at: {RAW_DIR}")
     return sorted(RAW_DIR.rglob("*.docx"))
 
 
 # ----------------------------
-# Extraction (CONDENSED)
+# Extraction (CONDENSED sections w/ blocks)
 # ----------------------------
 def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
     doc = Document(str(docx_path))
     doc_id = docx_path.stem
 
-    # Heading stack: list of (level:int, text:str)
     heading_stack: List[Tuple[int, str]] = []
 
-    # Accumulate list items before flushing into current section content
+    # list grouping
     current_list: List[Tuple[int, str]] = []
 
-    # Current section accumulator
+    # current section
     current_section_title: Optional[str] = None
     current_section_level: Optional[int] = None
     current_section_path: List[str] = []
-    content_parts: List[str] = []
+    blocks: List[Dict[str, Any]] = []
 
     sections: List[SectionRecord] = []
     section_index = 0
 
-    def flush_list_into_content() -> None:
-        nonlocal current_list, content_parts
+    def flush_list_into_blocks() -> None:
+        nonlocal current_list, blocks
         if not current_list:
             return
-        lines: List[str] = []
-        for lvl, t in current_list:
-            indent = "  " * max(lvl, 0)
-            lines.append(f"{indent}- {t}")
-        content_parts.append(clean_text("\n".join(lines)))
+        items = [{"level": lvl, "text": t} for (lvl, t) in current_list]
+        blocks.append({"type": "list", "items": items})
         current_list = []
 
     def flush_section() -> None:
-        nonlocal section_index, content_parts, current_section_title, current_section_path, current_section_level
-        flush_list_into_content()
-        content = clean_text("\n\n".join([p for p in content_parts if p.strip()]))
+        nonlocal section_index, blocks, current_section_title, current_section_path, current_section_level
+        flush_list_into_blocks()
 
-        # Only write a section if it has a heading AND some content
-        if current_section_title and content:
+        # only write if there is a heading + at least one block
+        if current_section_title and blocks:
             path_text = " > ".join(current_section_path) if current_section_path else current_section_title
             sections.append(
                 SectionRecord(
@@ -198,14 +191,12 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
                     path_text=path_text,
                     title=current_section_title,
                     heading_level=current_section_level,
-                    content=content,
-                    extra={},
+                    blocks=blocks,
                 )
             )
             section_index += 1
 
-        # reset content accumulator (heading info set when next heading arrives)
-        content_parts = []
+        blocks = []
 
     for kind, obj in iter_block_items(doc):
         if kind == "p":
@@ -215,14 +206,10 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
                 continue
 
             lvl = get_heading_level(p)
-
-            # --- Heading encountered ---
             if lvl is not None:
-                # finish prior section (if any)
                 flush_section()
 
-                # Maintain correct hierarchy:
-                # pop while last_level >= current_level (siblings replace each other)
+                # correct sibling handling
                 while heading_stack and heading_stack[-1][0] >= lvl:
                     heading_stack.pop()
                 heading_stack.append((lvl, txt))
@@ -230,27 +217,23 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
                 current_section_title = txt
                 current_section_level = lvl
                 current_section_path = [t for _, t in heading_stack]
-
                 continue
 
-            # --- List paragraph ---
             if is_list_paragraph(p):
                 current_list.append((get_list_level(p), txt))
                 continue
 
-            # --- Normal paragraph ---
-            flush_list_into_content()
-            content_parts.append(txt)
+            flush_list_into_blocks()
+            blocks.append({"type": "paragraph", "text": txt})
 
         elif kind == "tbl":
-            # table belongs to current section
-            flush_list_into_content()
+            flush_list_into_blocks()
             tbl: Table = obj
-            md = table_to_markdown(tbl)
-            if md.strip():
-                content_parts.append(md)
+            struct = table_to_struct(tbl)
+            if struct["n_rows"] == 0 and struct["n_cols"] == 0:
+                continue
+            blocks.append({"type": "table", "table": struct})
 
-    # flush last section at EOF
     flush_section()
     return sections
 
@@ -258,7 +241,7 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
 def main() -> None:
     docx_files = find_docx_files()
     if not docx_files:
-        raise FileNotFoundError(f"No .docx files found under: {RAW_DIR}")
+        raise FileNotFoundError(f"No .docx found under: {RAW_DIR}")
 
     total_sections = 0
     with open(DEFAULT_OUT, "w", encoding="utf-8") as f:
@@ -268,8 +251,8 @@ def main() -> None:
                 f.write(json.dumps(asdict(s), ensure_ascii=False) + "\n")
             total_sections += len(secs)
 
-    print(f"[load_docs] Found {len(docx_files)} .docx file(s) in {RAW_DIR}")
-    print(f"[load_docs] Wrote {total_sections} condensed sections → {DEFAULT_OUT}")
+    print(f"[load_docs] Found {len(docx_files)} docx file(s)")
+    print(f"[load_docs] Wrote {total_sections} sections → {DEFAULT_OUT}")
 
 
 if __name__ == "__main__":
