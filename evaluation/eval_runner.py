@@ -19,11 +19,21 @@ import argparse
 import csv
 import json
 import os
+<<<<<<< HEAD
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
+=======
+import argparse
+from pathlib import Path
+>>>>>>> ajna-branch
 import re
 from collections import Counter, defaultdict
 
+# -----------------------------
+# Arguments
+# -----------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # adjust if needed
+DEFAULT_BASE = PROJECT_ROOT / "storage" / "index"
 
 # -----------------------------
 # Text utils
@@ -50,9 +60,12 @@ def load_tests(path: str) -> List[Dict[str, Any]]:
 # Index + retrieval
 # -----------------------------
 
-def get_index():
+def get_index(format):
+    index_path = Path(DEFAULT_BASE, format)
+    print("[eval] using index_dir:", index_path)
+
     from rag.build_index import load_index
-    return load_index()
+    return load_index(index_path)
 
 
 def get_retrieved_nodes(index, query: str, top_k: int):
@@ -688,6 +701,8 @@ def main():
     ap.add_argument("--diag_k", type=int, default=200, help="Diagnostic retrieval depth for lookup categories")
     ap.add_argument("--out_dir", default="eval_outputs")
     ap.add_argument("--fail_on_gate", action="store_true", help="Exit nonzero if acceptance criteria fail")
+    ap.add_argument("--format", default="docx", required = True)
+
     args = ap.parse_args()
 
     tests = load_tests(args.tests)
@@ -698,7 +713,7 @@ def main():
     out_csv = os.path.join(args.out_dir, f"results_{stamp}.csv")
     out_gate = os.path.join(args.out_dir, f"gate_{stamp}.json")
 
-    index = get_index()
+    index = get_index(args.format)
 
     results: List[Dict[str, Any]] = []
 
@@ -745,7 +760,7 @@ def main():
             f,
             indent=2
         )
-
+    
     print(f"\nWrote:\n  {out_json}\n  {out_csv}\n  {out_gate}")
 
     if args.fail_on_gate and not overall_pass:

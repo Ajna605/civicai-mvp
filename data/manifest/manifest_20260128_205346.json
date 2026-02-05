@@ -1,6 +1,6 @@
 {
-  "run_id": "20260124_170059",
-  "ingested_at": "2026-01-24T17:01:00.484316",
+  "run_id": "20260128_205346",
+  "ingested_at": "2026-01-28T20:53:50.364872",
   "inputs": [
     {
       "path": "data/raw/Coral Gables - Comprehensive Plan - 12-25-2025 20-55 - selectable.pdf",
@@ -11,7 +11,7 @@
       "output_normalized": "data/normalized/coral_gables_comp_plan.normalized.json",
       "stats": {
         "sections": 722,
-        "tables": 0,
+        "tables": 56,
         "page_range": {
           "min": 1,
           "max": 142

@@ -50,8 +50,10 @@ def ref_from(node) -> dict:
         "snippet": " ".join(txt.split())[:220] + ("…" if len(txt) > 220 else ""),
     }
 
-def query_civicai(query: str):
-    index = load_index()
+def query_civicai(query: str, index_path:str):
+    index = load_index(index_path)
+    query_engine = index.as_query_engine(similarity_top_k=3, response_mode="compact")
+    response = query_engine.query(query)
 
     # Retrieve a decent pool; we'll filter/rank within it
     retriever = index.as_retriever(similarity_top_k=30)
