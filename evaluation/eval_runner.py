@@ -19,13 +19,10 @@ import argparse
 import csv
 import json
 import os
-<<<<<<< HEAD
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
-=======
 import argparse
 from pathlib import Path
->>>>>>> ajna-branch
 import re
 from collections import Counter, defaultdict
 

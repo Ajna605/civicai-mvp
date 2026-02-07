@@ -21,12 +21,47 @@ def parse_args():
                    help="Output directory where the index will be persisted")
     return p.parse_args()
 
+import json
+from llama_index.core import Document, VectorStoreIndex
+
 def build_index(rag_chunks_path: Path, index_dir: Path):
-    docs = SimpleDirectoryReader(rag_chunks_path).load_data()
+    # rag_chunks_path is a FILE: rag_chunks.jsonl
+    if rag_chunks_path.is_dir():
+        raise ValueError(f"Expected a file path to rag_chunks.jsonl, got directory: {rag_chunks_path}")
+
+    docs = []
+    with open(rag_chunks_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+
+            # Prefer 'text' if present; else fall back to 'content'
+            text = (rec.get("text") or rec.get("content") or "").strip()
+            if not text:
+                continue
+
+            # Keep metadata lean; don't stuff the whole record into text
+            meta = {
+                "id": rec.get("id"),
+                "doc_id": rec.get("doc_id"),
+                "source_path": rec.get("source_path"),
+                "section_index": rec.get("section_index"),
+                "title": rec.get("title"),
+                "path_text": rec.get("path_text"),
+            }
+            # include chunk meta if you need it
+            if isinstance(rec.get("meta"), dict):
+                meta.update(rec["meta"])
+
+            docs.append(Document(text=text, metadata=meta))
+
     index = VectorStoreIndex.from_documents(docs)
     index_dir.mkdir(parents=True, exist_ok=True)
     index.storage_context.persist(persist_dir=str(index_dir))
     return index
+
 
 def load_index(index_dir: Path) -> VectorStoreIndex:
     if not index_dir.exists():
@@ -38,7 +73,7 @@ def main():
     args = parse_args()
 
     base = Path(args.base)
-    rag_chunks_path = base / args.source
+    rag_chunks_path = base / args.source / "sections.jsonl"
     index_dir = Path(args.index_dir)
 
     if not rag_chunks_path.exists():
