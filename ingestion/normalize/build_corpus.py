@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Iterable
+from ingestion.normalize import normalize_pdf
 
 from docx import Document
 from docx.oxml.table import CT_Tbl
@@ -58,6 +59,25 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
             out = blocks.parent / "rag_chunks.jsonl"
 
     return blocks, out
+
+def find_pdf_files(input_path: Path) -> list[Path]:
+    if input_path.is_file():
+        if input_path.suffix.lower() != ".pdf":
+            raise ValueError(f"Expected a .pdf file, got: {input_path}")
+        return [input_path]
+    if not input_path.exists():
+        raise FileNotFoundError(f"Expected input at: {input_path}")
+    return sorted(input_path.rglob("*.pdf"))
+
+
+def find_docx_files(input_path: Path) -> list[Path]:
+    if input_path.is_file():
+        if input_path.suffix.lower() != ".docx":
+            raise ValueError(f"Expected a .docx file, got: {input_path}")
+        return [input_path]
+    if not input_path.exists():
+        raise FileNotFoundError(f"Expected input at: {input_path}")
+    return sorted(input_path.rglob("*.docx"))
 # ----------------------------
 # Table detection
 # ----------------------------
@@ -414,15 +434,24 @@ def extract_sections_from_pdf(pdf_path: Path) -> List[SectionRecord]:
                         content_parts.append(table_text)
 
         content = clean_text("\n\n".join([p for p in content_parts if p.strip()]))
-        # retrieval_text = f"{title}\nID: {code}\n{path_text}\n\n{content}"
-
+        
         # only write if we have a heading path and some content
         if not sec.heading_path or not content:
             continue
-
         title = sec.heading_path[-1]
         path = sec.heading_path
         path_text = " > ".join(path)
+
+        code = extract_code_from_title(title)
+        id_line = f"ID: {code}" if code else ""
+        retrieval_text = "\n".join([
+            title,
+            id_line,
+            path_text,
+            "",
+            content,
+        ]).strip()
+        retrieval_text = f"{title}\nID: {id_line}\n{path_text}\n\n{content}"
 
         sections.append(
             SectionRecord(
@@ -432,15 +461,18 @@ def extract_sections_from_pdf(pdf_path: Path) -> List[SectionRecord]:
                 path=path,
                 path_text=path_text,
                 title=title,
-                heading_level=len(path),   # proxy; PDFs don’t have true levels
-                content=content,
+                heading_level=len(path),   # proxy
+                content=retrieval_text,           # clean body (for humans)      # 👈 what the retriever embeds
                 extra={
                     "page_start": sec.page_start,
                     "page_end": sec.page_end,
                     "section_id": getattr(sec, "section_id", None),
+                    "code": code,           # optional but very useful
+                    "body":content
                 },
             )
         )
+        
         section_index += 1
 
     return sections
@@ -449,21 +481,52 @@ def extract_sections_from_pdf(pdf_path: Path) -> List[SectionRecord]:
 # ----------------------------
 # Main preprocess
 # ----------------------------
+from pathlib import Path
+import json
+from dataclasses import asdict
+
+NORMALIZED_BASE = Path("data/normalized")
+DEFAULT_OUT = NORMALIZED_BASE / "sections.jsonl"
+RAW_DIR = Path("data/raw")
+
 def main() -> None:
-    args = parse_args()
-    blocks_file, chunks_file = resolve_paths(args)   # keep your resolve_paths signature
-    sections_file = chunks_file.parent / "sections.jsonl"  # same folder as rag_chunks
+    args = parse_args()  # args.source in {"pdf","docx"}
+
+    if args.source == "docx":
+        docx_files = find_docx_files()
+        if not docx_files:
+            raise FileNotFoundError(f"No .docx found under: {RAW_DIR}")
+
+        total_sections = 0
+        with open(DEFAULT_OUT, "w", encoding="utf-8") as f:
+            for docx_path in docx_files:
+                secs = extract_sections_from_docx(docx_path)
+                for s in secs:
+                    f.write(json.dumps(asdict(s), ensure_ascii=False) + "\n")
+                total_sections += len(secs)
+
+        print(f"[load_docs] Found {len(docx_files)} docx file(s)")
+        print(f"[load_docs] Wrote {total_sections} sections → {DEFAULT_OUT}")
+        return
+
+    # ----------------------------
+    # PDF blocks-based corpora build
+    # ----------------------------
+    base_dir = NORMALIZED_BASE / "pdf"
+    blocks_file = base_dir / "blocks.jsonl"
+    sections_file = base_dir / "sections.jsonl"
+    chunks_file = base_dir / "rag_chunks.jsonl"
 
     print("blocks:", blocks_file)
-    print("chunks:", chunks_file)
     print("sections:", sections_file)
+    print("chunks:", chunks_file)
 
     if not blocks_file.exists():
         raise FileNotFoundError(
             f"Missing {blocks_file}. Run ingestion first to create blocks.jsonl."
         )
 
-    chunks_file.parent.mkdir(parents=True, exist_ok=True)
+    base_dir.mkdir(parents=True, exist_ok=True)
 
     max_chars = 1400
     overlap_chars = 200
@@ -471,13 +534,12 @@ def main() -> None:
 
     seen: set[str] = set()
     total_blocks = 0
-    total_chunks = 0
     total_sections = 0
+    total_chunks = 0
+    section_index = 0
 
-    section_index = 0  # for sections.jsonl
-
-    with open(chunks_file, "w", encoding="utf-8") as chunks_f, \
-         open(sections_file, "w", encoding="utf-8") as sections_f:
+    with open(sections_file, "w", encoding="utf-8") as sections_f, \
+         open(chunks_file, "w", encoding="utf-8") as chunks_f:
 
         for block in read_jsonl(blocks_file):
             total_blocks += 1
@@ -490,18 +552,20 @@ def main() -> None:
             extra = dict(block.get("extra", {}) or {})
             text = block.get("text", "") or ""
 
-            # ----------------------------
-            # 1) Build sections.jsonl
-            # ----------------------------
+            # 1) sections.jsonl (from section blocks)
             if block_type == "section":
-                # “condensed section” record from the block
                 title = section_path[-1] if section_path else None
-                path_text = " > ".join(section_path) if section_path else (title or "")
+                if title:
+                    title = clean_text(title)
 
-                # For sections.jsonl, store content cleanly
-                content = clean_text(text)
+                path_text = " > ".join([clean_text(x) for x in section_path]) if section_path else (title or "")
+                body = clean_text(text)
 
-                if title and content:
+                if title and body:
+                    code = extract_code_from_title(title)
+                    id_line = f"ID: {code}" if code else ""
+                    retrieval_text = "\n".join([title, id_line, path_text, "", body]).strip()
+
                     sec_rec = {
                         "doc_id": doc_id,
                         "source_path": source_path,
@@ -510,22 +574,14 @@ def main() -> None:
                         "path_text": path_text,
                         "title": title,
                         "heading_level": len(section_path) if section_path else None,
-                        "content": content,
-                        "extra": {
-                            **extra,
-                            # optional but useful for PDF traceability
-                            "block_index": block_index,
-                        },
+                        "content": retrieval_text,
+                        "extra": {**extra, "block_index": block_index, "code": code, "body": body},
                     }
                     sections_f.write(json.dumps(sec_rec, ensure_ascii=False) + "\n")
                     total_sections += 1
                     section_index += 1
 
-            # ----------------------------
-            # 2) Build rag_chunks.jsonl
-            # ----------------------------
-
-            # Table shaping + filtering
+            # 2) rag_chunks.jsonl
             if block_type == "table":
                 caption = extra.get("caption") or extra.get("table_caption")
                 raw_table = extra.get("raw_text") or extra.get("table_raw_text") or text
@@ -535,7 +591,6 @@ def main() -> None:
 
                 tier = table_tier(caption, raw_table)
                 rows, cols = table_dims(raw_table)
-
                 extra["table_tier"] = tier
                 extra["table_rows"] = rows
                 extra["table_cols"] = cols
@@ -545,20 +600,14 @@ def main() -> None:
 
                 text = f"{caption}\n\n{raw_table}" if caption else raw_table
 
-            # Policy items (your splitter) — works only if code exists in enriched text
             if block_type == "section" and section_path:
-                text = " > ".join(section_path) + "\n\n" + text                
-                total_chunks += 1
-            
+                text = " > ".join(section_path) + "\n\n" + text
+
             text = clean_text(text)
             if not text:
                 continue
 
-            if block_type == "heading" and len(text) < 3:
-                continue
-
-            chunks = chunk_text(text, max_chars=max_chars, overlap_chars=overlap_chars)
-            for i, ch in enumerate(chunks):
+            for i, ch in enumerate(chunk_text(text, max_chars=max_chars, overlap_chars=overlap_chars)):
                 item = {
                     "id": f"{doc_id}__b{block_index}__c{i}__{stable_hash(ch)}",
                     "doc_id": doc_id,
@@ -571,15 +620,7 @@ def main() -> None:
                 }
 
                 if dedupe:
-                    key = (
-                        (doc_id or "")
-                        + "|"
-                        + " > ".join(section_path or [])
-                        + "|"
-                        + (block_type or "")
-                        + "|"
-                        + ch
-                    )
+                    key = (doc_id or "") + "|" + " > ".join(section_path or []) + "|" + (block_type or "") + "|" + ch
                     h = stable_hash(key)
                     if h in seen:
                         continue
@@ -588,11 +629,10 @@ def main() -> None:
                 chunks_f.write(json.dumps(item, ensure_ascii=False) + "\n")
                 total_chunks += 1
 
-    print(f"[build] Read {total_blocks} blocks from {blocks_file}")
-    print(f"[build] Wrote {total_chunks} chunks → {chunks_file}")
-    print(f"[build] Wrote {total_sections} sections → {sections_file}")
-    print(f"[build] Params: max_chars={max_chars}, overlap_chars={overlap_chars}, dedupe={dedupe}")
-
+    print(f"[build_pdf] Read {total_blocks} blocks from {blocks_file}")
+    print(f"[build_pdf] Wrote {total_sections} sections → {sections_file}")
+    print(f"[build_pdf] Wrote {total_chunks} chunks → {chunks_file}")
+    print(f"[build_pdf] Params: max_chars={max_chars}, overlap_chars={overlap_chars}, dedupe={dedupe}")
 
 
 if __name__ == "__main__":
