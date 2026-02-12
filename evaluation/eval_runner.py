@@ -25,6 +25,8 @@ import argparse
 from pathlib import Path
 import re
 from collections import Counter, defaultdict
+from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup
+
 
 # -----------------------------
 # Arguments
@@ -60,7 +62,7 @@ def load_tests(path: str) -> List[Dict[str, Any]]:
 def get_index(format):
     index_path = Path(DEFAULT_BASE, format)
     print("[eval] using index_dir:", index_path)
-
+    print("INDEX PATH", index_path)
     from rag.build_index import load_index
     return load_index(index_path)
 
@@ -626,7 +628,7 @@ def _rates_to_display_for_category(cat: str) -> List[str]:
         "NOT_RETRIEVED_AT_DIAG_K",
         "NO_RELEVANT_CONTEXT_IN_TOP_K",
         "NOISE_HIGH",
-    ]
+    ]   
 
 
 def print_category_summaries(category_summaries: Dict[str, Dict[str, Any]]):
@@ -713,10 +715,21 @@ def main():
     index = get_index(args.format)
 
     results: List[Dict[str, Any]] = []
+    code_map = build_code_map_from_index(index)
 
     for t in tests:
         q = t.get("question", "")
-        retrieved = get_retrieved_nodes(index, q, top_k=args.top_k_retrieve)
+        if t.get("category") == "policy_lookup":
+            retrieved = retrieve_policy_lookup(
+                index,
+                q,
+                k_eval=args.k_eval,                 # evaluate top k
+                top_k_retrieve=args.top_k_retrieve, # pool
+                code_map=code_map,
+            )
+        else:
+            retrieved = get_retrieved_nodes(index, q, top_k=args.top_k_retrieve)
+
         res = evaluate_one(index, t, retrieved, k_eval=args.k_eval, diag_k=args.diag_k)
         results.append(res)
 

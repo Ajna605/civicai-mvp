@@ -1,6 +1,8 @@
 # rag/query_engine.py
 import re
 from .build_index import load_index
+from .retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup, extract_code_from_query, norm_code
+
 
 STOPWORDS = {
     "the","a","an","and","or","to","of","in","on","for","with","about","what","does","say",
@@ -52,6 +54,7 @@ def ref_from(node) -> dict:
 
 def query_civicai(query: str, index_path:str):
     index = load_index(index_path)
+    code_map = build_code_map_from_index(index)
     query_engine = index.as_query_engine(similarity_top_k=3, response_mode="compact")
     response = query_engine.query(query)
 
@@ -64,39 +67,28 @@ def query_civicai(query: str, index_path:str):
 
     # LOOKUP MODE
     if is_lookup_question(query):
-        tokens = extract_rare_tokens(query)
+        # Use deterministic code lookup when possible
+        code = extract_code_from_query(query)
+        retrieved = retrieve_policy_lookup(
+            index,
+            query,
+            k_eval=1,                 # we only need best for lookup answer
+            top_k_retrieve=30,
+            code_map=code_map,
+        )
 
-        # Find nodes that literally contain any token
-        matching = []
-        for nws in nodes:
-            text = nws.node.get_text()
-            if any(tok.lower() in text.lower() for tok in tokens):
-                matching.append(nws)
+        if not retrieved:
+            return {"answer": "No relevant context retrieved.", "references": []}
 
-        if not matching:
-            return {
-                "answer": "I didn’t retrieve text that explicitly mentions the specific item you asked about.",
-                "references": []
-            }
+        best = retrieved[0].node
+        best_text = best.get_text() if hasattr(best, "get_text") else str(best)
 
-        # Prefer the match where the token appears earliest (more “focused” chunk)
-        def match_rank(nws):
-            txt = nws.node.get_text().lower()
-            positions = [txt.find(tok.lower()) for tok in tokens if txt.find(tok.lower()) != -1]
-            return min(positions) if positions else 10**9
+        # If we found a code, anchor snippet around it; else keep your old token heuristic
+        anchor = code or (extract_rare_tokens(query)[0] if extract_rare_tokens(query) else "")
+        ans = snippet_around(best_text, anchor) if anchor else " ".join(best_text.split())[:260]
 
-        matching.sort(key=match_rank)
-        best_nws = matching[0]
-        best_text = best_nws.node.get_text()
+        return {"answer": ans, "references": [ref_from(best)]}
 
-        # Use the most salient token (first one)
-        tok = tokens[0]
-        ans = snippet_around(best_text, tok)
-
-        return {
-            "answer": ans,
-            "references": [ref_from(best_nws.node)]
-        }
 
     # THEMATIC / GENERAL MODE (simple for now)
     # Return top 2 chunks (cleaned) + references

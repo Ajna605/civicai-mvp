@@ -13,7 +13,7 @@
   },
   {
     "id": "Q1.1",
-    "question": "What does the document say about Objective EDU-1.1.?",
+    "question": "What does the document say about EDU-1.1.?",
     "category": "policy_lookup",
     "expected": {
       "must_mention_any": ["EDU-1.1."],
@@ -21,7 +21,103 @@
       "source_document": "Coral_Gables_Comprehensive_Plan"
     },
     "known_issue": false,
-    "notes": ""
+    "notes": "Type of objective/policy/goal is removed"
+  },
+  {
+    "id": "Q1.2",
+    "question": "What does the document say about GRN-1?",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["GRN-1."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Type of objective/policy/goal is removed"
+  },
+  {
+    "id": "Q1.3",
+    "question": "What is the Goal 2 say about the 5-Year Capital Improvement Program?",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["5-Year Capital Improvement Program", " Goal CIE-2."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Part of ID removed - 'CIE-'"
+  },
+  {
+    "id": "Q1.4",
+    "question": "Tell me about Policy 1.18.1. regarding Sunrise Harbour Subdivision",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["Sunrise Harbour Subdivision", "Policy FLU-1.18.1."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Part of ID removed - FLU-"
+  },
+  {
+    "id": "Q1.5",
+    "question": "Give details about 2.1.2. about limiting public expenditures  ",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["Policy SAF-2.1.2."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Policy and part of ID removed"
+  },
+  {
+    "id": "Q1.6",
+    "question": "What is Policy HIS-5.11.4.?",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["Policy HIS-5.1.4."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Wrong ID"
+  },
+  {
+    "id": "Q1.7",
+    "question": "Give information about REC-1.4.?",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["REC-1.4."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Objective removed"
+  },
+  {
+    "id": "Q1.8",
+    "question": "Goal NAT-33.",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["Goal NAT-3."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Wrong ID"
+  },
+  {
+    "id": "Q1.9",
+    "question": "Tell me about 3.2. regarding commercial traffic intrusion?",
+    "category": "policy_lookup",
+    "expected": {
+      "must_mention_any": ["Objective MOB-3.2."],
+      "should_not_mention": [],
+      "source_document": "Coral_Gables_Comprehensive_Plan"
+    },
+    "known_issue": false,
+    "notes": "Remove Objective and part of ID"
   },
   {
     "id": "Q2",
@@ -37,7 +133,7 @@
   },
   {
     "id": "Q2.1",
-    "question": "Return marina-related policies",
+    "question": "What does the Coastal Management Element say about marinas?",
     "category": "section_lookup",
     "expected": {
       "must_mention_any": ["marina"],
@@ -45,6 +141,94 @@
       "should_not_mention": []
     },
     "notes": ""
+  },
+  {
+    "id": "Q2.2",
+    "question": "Define Neighborhood Parks",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["Neighborhood Park", "Neighborhood Parks"],
+      "should_mention": ["recreational", "playgroung"],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q2.3",
+    "question": "What does Natural Resources Element say about air quality?",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["air quality", "NAT-1.1."],
+      "should_mention": ["Objective NAT-1.1."],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q2.4",
+    "question": "How does the city plan to be recognized as a green and sustainable community?",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["Goal GRN-1", "GRN-1", "sustainable community"],
+      "should_mention": ["measurable steps", "awareness", "healthy setting"],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q2.5",
+    "question": "How does the city plan on promoting fewer work-based vehicle trips",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["work-based vehicle trips", "commuting trips", "carpooling", "bicycling", "public transit"],
+      "should_mention": [],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q2.6",
+    "question": "Explain how Coral Gables will maintain and strengthen intergovernmental coordination and establish a leadership role on local, regional and state issues.",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["Objective GOV-2.3.", "intergovernmental coordination"],
+      "should_mention": ["Policy GOV-2.3.1.", "Policy GOV-2.3.2."],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q2.7",
+    "question": "How does the city promote good governance, intergovernmental coordination, and public participation?",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["public participation", "effective governance"],
+    "should_mention": ["outreach", "communication"],
+    "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q2.8",
+    "question": "“What is the Design Element Vision Statement and what is Goal DES-1?”",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["Goal DES-1.", "Design Element"],
+      "should_mention": [],
+      "should_not_mention": []
+    },
+    "notes": "Return part of a section"
+  },
+  {
+    "id": "Q2.9",
+    "question": "What does the plan say about potable (drinking) water supply and conservation?",
+    "category": "section_lookup",
+    "expected": {
+      "must_mention_any": ["Potable Water", "drinking water"],
+      "should_mention": ["potable water treatment"],
+      "should_not_mention": []
+    },
+    "notes": "Paraphrased section look-up"
   },
   {
     "id": "Q3",
@@ -64,6 +248,102 @@
     "expected": {
       "key_phrases": ["affordable housing", "housing opportunities"],
       "should_mention": ["Objective HOU-1.1."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.2",
+    "question": "What does the plan say about land development regulations?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["land development regulations"],
+      "should_mention": ["Policy ADM-1.2.1.", "Policy FLU-1.4.4.", "Policy FLU-1.4.5.", "Objective FLU-2.1.", "Policy FLU-3.3.2.", "Policy MOB-2.8.1."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests retrieval across various sections"
+  },
+  {
+    "id": "Q3.3",
+    "question": "What does the plan say about affordable housing?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["affordable housing", "housing opportunities"],
+      "should_mention": ["Objective HOU-1.1."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.4",
+    "question": "How are historic resources conserved?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["historic resources"],
+      "should_mention": ["Objective FLU-1.4.", "Policy FLU-1.4.1.", "Policy FLU-1.4.3.", "Objective NAT-2.2.", "Policy REC-1.4.7."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.5",
+    "question": "What does the plan say about sanitary sewer systems ?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["sanitary sewer systems", "Sanitary Sewer LOS"],
+      "should_mention": ["Objective COM-2.1.", "Policy COM-2.1.4.", "Policy CIE-1.2.1."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.6",
+    "question": "How does infrastructural development tie in with coastal management?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["Coastal Zone", "not adversely affect"],
+      "should_mention": ["public access", "natural resources"],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.7",
+    "question": "How does residential land use tie in with design element policies?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["residential"],
+      "should_mention": ["Policy DES-1.1.6."],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.8",
+    "question": "How does the comprehensive plan balance economic development with environmental protection?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["economic", "environment", "environmental"],
+      "should_mention": ["protection", "conservation"],
+      "should_not_mention": [],
+      "may_span_multiple_chunks": true
+    },
+    "notes": "Tests multi-chunk retrieval"
+  },
+  {
+    "id": "Q3.9",
+    "question": "How do housing and transportation policies work together to reduce congestion?",
+    "category": "general_summary",
+    "expected": {
+      "key_phrases": ["housing", "transportation", "traffic", "congestion"],
+      "should_mention": [],
       "should_not_mention": [],
       "may_span_multiple_chunks": true
     },
@@ -121,3 +401,5 @@
   }
   
 ]
+
+

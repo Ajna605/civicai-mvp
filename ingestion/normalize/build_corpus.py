@@ -300,7 +300,12 @@ class SectionRecord:
     content: str             # paragraphs/lists/tables combined
     extra: Dict[str, Any]
 
-
+## Add title to content
+def compose_embed_text(sec: dict) -> str:
+    title = sec.get("title", "").strip()
+    path_text = sec.get("path_text", "").strip()
+    content = sec.get("content", "").strip()
+    return "\n".join([x for x in [title, path_text, "", content] if x != ""]).strip()
 
 # ----------------------------
 # Extraction (CONDENSED)
@@ -343,6 +348,7 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
         # Only write a section if it has a heading AND some content
         if current_section_title and content:
             path_text = " > ".join(current_section_path) if current_section_path else current_section_title
+            content = clean_text(f"{current_section_title}\n\n{content}")
             sections.append(
                 SectionRecord(
                     doc_id=doc_id,
@@ -352,7 +358,7 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
                     path_text=path_text,
                     title=current_section_title,
                     heading_level=current_section_level,
-                    content=content,
+                    content=content,         
                     extra={},
                 )
             )
@@ -486,14 +492,15 @@ import json
 from dataclasses import asdict
 
 NORMALIZED_BASE = Path("data/normalized")
-DEFAULT_OUT = NORMALIZED_BASE / "sections.jsonl"
+
 RAW_DIR = Path("data/raw")
 
 def main() -> None:
     args = parse_args()  # args.source in {"pdf","docx"}
-
+    DEFAULT_OUT = NORMALIZED_BASE/ args.source / "sections.jsonl"
     if args.source == "docx":
-        docx_files = find_docx_files()
+        print(RAW_DIR)
+        docx_files = find_docx_files(RAW_DIR)
         if not docx_files:
             raise FileNotFoundError(f"No .docx found under: {RAW_DIR}")
 
@@ -554,28 +561,21 @@ def main() -> None:
 
             # 1) sections.jsonl (from section blocks)
             if block_type == "section":
-                title = section_path[-1] if section_path else None
-                if title:
-                    title = clean_text(title)
-
-                path_text = " > ".join([clean_text(x) for x in section_path]) if section_path else (title or "")
+                title = clean_text(section_path[-1]) if section_path else None
                 body = clean_text(text)
 
                 if title and body:
-                    code = extract_code_from_title(title)
-                    id_line = f"ID: {code}" if code else ""
-                    retrieval_text = "\n".join([title, id_line, path_text, "", body]).strip()
-
                     sec_rec = {
                         "doc_id": doc_id,
                         "source_path": source_path,
                         "section_index": section_index,
                         "path": section_path,
-                        "path_text": path_text,
+                        "path_text": " > ".join([clean_text(x) for x in section_path]) if section_path else title,
                         "title": title,
                         "heading_level": len(section_path) if section_path else None,
-                        "content": retrieval_text,
-                        "extra": {**extra, "block_index": block_index, "code": code, "body": body},
+                        # KEY: keep it short + specific
+                        "content": clean_text(f"{title}\n\n{body}"),
+                        "extra": {**extra, "block_index": block_index},
                     }
                     sections_f.write(json.dumps(sec_rec, ensure_ascii=False) + "\n")
                     total_sections += 1
@@ -601,7 +601,8 @@ def main() -> None:
                 text = f"{caption}\n\n{raw_table}" if caption else raw_table
 
             if block_type == "section" and section_path:
-                text = " > ".join(section_path) + "\n\n" + text
+                title = clean_text(section_path[-1])
+                text = f"{title}\n\n{text}"
 
             text = clean_text(text)
             if not text:

@@ -3,10 +3,11 @@
 
 # rag/build_index.py
 from pathlib import Path
-from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, StorageContext, load_index_from_storage
+from llama_index.core import Document, VectorStoreIndex, StorageContext, load_index_from_storage
 import argparse
 from .settings import apply_settings
 apply_settings()
+import json
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # adjust if needed
 DEFAULT_BASE = PROJECT_ROOT / "data" / "normalized"
@@ -20,9 +21,6 @@ def parse_args():
     p.add_argument("--index-dir", required=True,
                    help="Output directory where the index will be persisted")
     return p.parse_args()
-
-import json
-from llama_index.core import Document, VectorStoreIndex
 
 def build_index(rag_chunks_path: Path, index_dir: Path):
     # rag_chunks_path is a FILE: rag_chunks.jsonl
