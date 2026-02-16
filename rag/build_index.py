@@ -14,7 +14,7 @@ DEFAULT_BASE = PROJECT_ROOT / "data" / "normalized"
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--source", choices=["pdf", "docx"], required=True,
+    p.add_argument("--source", choices=["pdf", "docx", "csv"], required=True,
                    help="Which normalized folder to read rag_chunks.jsonl from")
     p.add_argument("--base", default=str(DEFAULT_BASE),
                    help="Base directory containing normalized/<source>/rag_chunks.jsonl")
@@ -71,7 +71,7 @@ def main():
     args = parse_args()
 
     base = Path(args.base)
-    rag_chunks_path = base / args.source / "sections.jsonl"
+    rag_chunks_path = base / args.source / "rag_chunks.jsonl"
     index_dir = Path(args.index_dir)
 
     if not rag_chunks_path.exists():

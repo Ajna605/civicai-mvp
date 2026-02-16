@@ -386,7 +386,6 @@
     "known_issue": false,
     "notes": "Paraphrased table name - table name not retrieved but content is"
   },
-  
   {
     "id": "Q4.3",
     "question": "What is the required land density for Single-family detached homes?",
@@ -398,8 +397,104 @@
       "should_not_mention": []
     },
     "notes": "Table content part of query - good results"
+  },
+  {
+    "id": "Q4.4",
+    "question": "What is the mileage for Non-City District/Regional?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["Varies"],
+      "must_mention_any": [],
+      "should_mention": ["30 minute drive or 10 miles"],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q4.5",
+    "question": "What is the service radius of Private Park/ Recreation Facilities?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["10 minute drive or 3.3 miles"],
+      "must_mention_any": [],
+      "should_mention": [],
+      "should_not_mention": []
+    },
+    "notes": ""
+  },
+  {
+    "id": "Q4.6",
+    "question": "What land use classification has the minimum F.A.R?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": [],
+      "must_mention_any": ["Open Space", "Conservation Areas"],
+      "should_mention": [],
+      "should_not_mention": []
+    },
+    "notes": "Row comparison"
+  },
+  {
+    "id": "Q4.7",
+    "question": "Out of residential, retail, office and industrial use which has the maximum % FAR?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": [],
+      "must_mention_any": ["Residential", "Office"],
+      "should_mention": ["85%"],
+      "should_not_mention": []
+    },
+    "notes": "Column trend"
+  },
+  {
+    "id": "Q4.8",
+    "question": "What is the maximum height allowed for commercial land use?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["Up to 150’ maximum "],
+      "must_mention_any": [],
+      "should_mention": ["Commercial High-Rise Intensity"],
+      "should_not_mention": []
+    },
+    "notes": "Row comparison"
+  },
+  {
+    "id": "Q4.9",
+    "question": "What is the sub category of University Campus Classification in the Other land Uses table?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["University Campus Multi-use Area"],
+      "must_mention_any": [],
+      "should_mention": ["university"],
+      "should_not_mention": []
+    },
+    "notes": "Find information from split cell"
+  },
+  {
+    "id": "Q4.10",
+    "question": "What is the required land density for Single-family detached homes?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["single-family", "acre"],
+      "must_mention_any": ["six", "6"],
+      "should_mention": ["residential"],
+      "should_not_mention": []
+    },
+    "notes": "Table content part of query - good results"
+  },
+  {
+    "id": "Q4.11",
+    "question": "What is the service radius in miles added together for different recreation facilities?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["26.25"],
+      "must_mention_any": [],
+      "should_mention": [],
+      "should_not_mention": []
+    },
+    "notes": "Arithmetic reasoning",
+    "known_issue": true
   }
-  
 ]
 
 
