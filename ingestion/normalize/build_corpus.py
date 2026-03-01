@@ -6,24 +6,14 @@ import argparse
 import json
 import re
 from pathlib import Path
-from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Iterable
-from ingestion.normalize import normalize_pdf
-from ingestion.schema.document_schema import SectionRecord
 from utils.hash_utils import short_hash
-from utils.text_utils import clean_text, extract_code_from_title
-from utils.table_utils import table_dims, table_tier, table_to_markdown, looks_like_table
-
-from docx import Document
-from docx.oxml.table import CT_Tbl
-from docx.oxml.text.paragraph import CT_P
-from docx.table import Table
-from docx.text.paragraph import Paragraph
+from utils.text_utils import clean_text
+from utils.table_utils import table_dims, table_tier, looks_like_table
 
 # ----------------------------
 # Paths (repo-aware)
 # ----------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 NORMALIZED_BASE = Path("data/normalized")
 
 def parse_args() -> argparse.Namespace:
@@ -31,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--source", required=True, choices=["pdf", "docx", "csv"])
     p.add_argument("--max_chars", type=int, default=1400)
     p.add_argument("--overlap_chars", type=int, default=200)
-    p.add_argument("--dedupe", action="store_true", default=True)
+    p.add_argument("--no_dedupe", action="store_true", help="Disable deduplication")
     p.add_argument("--keep_only_tier_a_tables", action="store_true", default=False)
     return p.parse_args()
 
@@ -99,42 +89,6 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
                 continue
             yield json.loads(line)
 
-
-
-# ----------------------------
-# List detection + nesting
-# ----------------------------
-def is_list_paragraph(p: Paragraph) -> bool:
-    style_name = (p.style.name or "").lower() if p.style else ""
-    return ("list" in style_name) or ("bullet" in style_name) or ("number" in style_name)
-
-
-def get_list_level(p: Paragraph) -> int:
-    """
-    Best-effort nesting level via numbering properties; returns 0 if unknown.
-    """
-    try:
-        numPr = p._p.pPr.numPr  # type: ignore[attr-defined]
-        if numPr is None or numPr.ilvl is None:
-            return 0
-        return int(numPr.ilvl.val)
-    except Exception:
-        return 0
-
-def is_heading_paragraph(p: Paragraph) -> bool:
-    style_name = (p.style.name or "") if p.style else ""
-    return style_name.lower().startswith("heading")
-
-def get_heading_level(p: Paragraph) -> Optional[int]:
-    """
-    Parse 'Heading 2' -> 2, returns None if not heading.
-    """
-    if not is_heading_paragraph(p):
-        return None
-    style = p.style.name if p.style else ""
-    m = re.search(r"(\d+)", style or "")
-    return int(m.group(1)) if m else 1
-
 # ----------------------------
 # Iterate blocks in doc order
 # ----------------------------
@@ -148,14 +102,6 @@ def iter_block_items(doc: Document) -> Iterator[Tuple[str, Any]]:
             yield "p", Paragraph(child, doc)
         elif isinstance(child, CT_Tbl):
             yield "tbl", Table(child, doc)
-
-
-def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                yield json.loads(line)
 
 
 def block_to_text(block: Dict[str, Any]) -> str:
@@ -332,7 +278,7 @@ def main() -> None:
                 source=args.source,
                 max_chars=args.max_chars,
                 overlap_chars=args.overlap_chars,
-                dedupe=args.dedupe,
+                dedupe = not args.no_dedupe,
                 seen=seen,
                 chunks_f=chunks_f,
                 keep_only_tier_a_tables=args.keep_only_tier_a_tables,
@@ -343,7 +289,7 @@ def main() -> None:
     print(f"[build_corpus] Wrote {total_chunks} chunks → {chunks_file}")
     print(
         f"[build_corpus] Params: max_chars={args.max_chars}, overlap_chars={args.overlap_chars}, "
-        f"dedupe={args.dedupe}, keep_only_tier_a_tables={args.keep_only_tier_a_tables}"
+        f"no_dedupe={args.no_dedupe}, keep_only_tier_a_tables={args.keep_only_tier_a_tables}"
     )
 
 

@@ -1,16 +1,13 @@
 # ingestion/load_docs.py
-from __future__ import annotations
 import argparse
 import json
 import re
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from dataclasses import asdict
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Path, Set
 from pathlib import Path
 from ingestion.normalize.normalize_pdf import normalize_pdf
 from ingestion.normalize.normalize_csv import normalize_csv
 from ingestion.schema.document_schema import NormalizedDoc, SectionRecord
-from utils.hash_utils import _sha256_file
 from utils.table_utils import table_to_markdown
 
 from docx import Document
@@ -29,7 +26,7 @@ RAW_DIR = Path("data/raw")
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--source", choices=["pdf", "docx", "csv"], required=True)
-    p.add_argument("--input", required=True, help="Path to the document")
+    p.add_argument("--input", help="Path to the document", required= False)
     p.add_argument("--out-blocks", default=None, help="sections.jsonl output path")
     return p.parse_args()
 
@@ -150,8 +147,7 @@ def stable_table_id(
 # Extraction (CONDENSED sections w/ sections)
 # ----------------------------
 
-from pathlib import Path
-from typing import List, Set
+
 
 def normalized_doc_to_records(norm_doc: NormalizedDoc, source_path: str) -> List[SectionRecord]:
     records: List[SectionRecord] = []
@@ -281,7 +277,7 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
         elif kind == "tbl":
             flush_list_into_blocks()
             tbl: Table = obj
-            table_ordinal = 1+ sum(1 for b in blocks if b.get("type") == "table")
+            table_ordinal += 1
             tid = stable_table_id(doc_id=doc_id, section_path=current_section_path, table_ordinal=table_ordinal, source_type="docx", )
             raw_text = table_to_markdown(tbl)
             blocks.append({"type": "table", "table_id": tid, "raw_text": raw_text, "caption": None,
