@@ -6,6 +6,7 @@
 import time
 from rag.settings import apply_settings
 from rag.query_engine import query_civicai
+from sql_engine.sql_query_engine import query_sql
 import torch
 import argparse
 import json
@@ -21,19 +22,17 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--format", choices=["pdf", "docx"], required=True,
                    help="Which normalized folder to read rag_chunks.jsonl from")
-
+    p.add_argument("--engine", choices=["rag", "sql"], required=True,
+                   help="Which engine to run")
     return p.parse_args()
+
+DOC_CATEGORIES = ["policy_lookup", "section_lookup", "table_lookup", "general_summary"]
+TABULAR_CATEGORIES = ["cell_lookup", "aggregation", "row_filter", "chart_request"]
 
 if __name__ == "__main__":
     args = parse_args()
-    apply_settings()     # loads model once
-
     # q = "Does the Coral Gables plan specify housing density limits?"
-    print("CUDA available:", torch.cuda.is_available())
-    print("GPU:", torch.cuda.get_device_name(0))
-    index_path = Path(DEFAULT_BASE, args.format)
 
-    start = time.time()
     # q = "What is the restriction in regards to residential development throughout the coastal area of East of Old Cutler Road?"
     # q = "Does the Coral Gables plan specify housing density limits?"
     # q = "Explain what is mentioned in Policy FLU-1.1.2."
@@ -47,6 +46,16 @@ if __name__ == "__main__":
     #Q6
     # q = "Does the Coral Gables plan specify housing density limits?"
 
-    print(query_civicai(q, index_path))
-    end = time.time()
-    print("Time taken: ", (end - start)/60, "minutes")
+    if args.engine == "rag":
+        apply_settings()     # loads model once
+
+        index_path = Path(DEFAULT_BASE, args.format)
+
+        start = time.time()
+       
+        print(query_civicai(q, index_path))
+        end = time.time()
+        print("Time taken: ", (end - start)/60, "minutes")
+
+    else:
+        print(query_sql(q, index_path))

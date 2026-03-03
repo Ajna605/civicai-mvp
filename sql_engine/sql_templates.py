@@ -12,6 +12,14 @@ def cell_lookup_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
         where.append("year = ?")
         params.append(q["year"])
 
+    if q.get("subject") is not None:
+        where.append("subject = ?")
+        params.append(q["subject"])
+
+    if q.get("stat_type") is not None:
+        where.append("stat_type = ?")
+        params.append(q["stat_type"])
+
     sql = f"""
       SELECT value, source_file, row_id
       FROM {TABLE}
@@ -24,48 +32,139 @@ def cell_lookup_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
     return sql, params
 
 def aggregation_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
-    agg = q.get("agg", "SUM").upper()
-    if agg not in {"SUM","AVG","MIN","MAX","COUNT"}:
-        raise ValueError(f"Unsupported agg: {agg}")
+    op = q.get("op", "").upper()
 
-    where = ["measure = ?"]
-    params: List[Any] = [q["measure"]]
+    if op not in {"SUM", "AVG", "MIN", "MAX", "COUNT"}:
+        raise ValueError(f"Unsupported op: {op}")
 
-    if "year" in q and q["year"] is not None:
-        where.append("year = ?")
-        params.append(q["year"])
+    filters = q.get("filters", {})
+    where = []
+    params: List[Any] = []
 
-    if "label_in" in q and q["label_in"]:
-        placeholders = ",".join(["?"] * len(q["label_in"]))
-        where.append(f"label IN ({placeholders})")
-        params.extend(q["label_in"])
+    # ---- Exact match filters ----
+    for field in ["label", "subject", "stat_type", "year", "unit", "source_file"]:
+        if field in filters and filters[field] is not None:
+            where.append(f"{field} = ?")
+            params.append(filters[field])
 
-    sql = f"""
-      SELECT {agg}(value) AS value, COUNT(*) AS n_rows
-      FROM {TABLE}
-      WHERE {" AND ".join(where)}
-    """
+    # ---- Measure selector (exactly one allowed) ----
+    measure = filters.get("measure")
+    measure_contains = filters.get("measure_contains")
+    measures_in = filters.get("measures_in")
+
+    selectors = [x is not None for x in [measure, measure_contains, measures_in]]
+    if sum(selectors) != 1:
+        raise ValueError("Exactly one of measure, measure_contains, or measures_in must be provided.")
+
+    if measure:
+        where.append("measure = ?")
+        params.append(measure)
+
+    elif measure_contains:
+        where.append("measure ILIKE ?")
+        params.append(f"%{measure_contains}%")
+
+    elif measures_in:
+        placeholders = ",".join(["?"] * len(measures_in))
+        where.append(f"measure IN ({placeholders})")
+        params.extend(measures_in)
+
+    # Always exclude NULL values
+    where.append("value IS NOT NULL")
+
+    where_clause = " AND ".join(where)
+
+    # COUNT is special: no need to aggregate value
+    if op == "COUNT":
+        sql = f"""
+            SELECT
+                COUNT(*) AS value,
+                COUNT(*) AS n
+            FROM {TABLE}
+            WHERE {where_clause};
+        """
+    else:
+        sql = f"""
+            SELECT
+                {op}(value) AS value,
+                COUNT(*) AS n
+            FROM {TABLE}
+            WHERE {where_clause};
+        """
+
     return sql, params
 
+
+ALLOWED_ORDER = {"ASC", "DESC"}
+ALLOWED_SELECT = {"row", "compact"}
+
 def row_filter_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
-    order = q.get("order", "DESC").upper()
-    if order not in {"ASC","DESC"}:
+    order = (q.get("order") or "DESC").upper()
+    if order not in ALLOWED_ORDER:
         raise ValueError("order must be ASC or DESC")
+
     limit = int(q.get("limit", 1))
+    if limit <= 0:
+        raise ValueError("limit must be >= 1")
 
-    where = ["measure = ?"]
-    params: List[Any] = [q["measure"]]
+    offset = int(q.get("offset", 0))
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
 
-    if "year" in q and q["year"] is not None:
-        where.append("year = ?")
-        params.append(q["year"])
+    filters = q.get("filters") or {}
+    where: List[str] = []
+    params: List[Any] = []
 
+    # ---- Exact match filters (deterministic) ----
+    for field in ["label", "subject", "stat_type", "year", "unit", "source_file"]:
+        if field in filters and filters[field] is not None:
+            where.append(f"{field} = ?")
+            params.append(filters[field])
+
+    # ---- Measure selector: exactly one ----
+    measure = filters.get("measure")
+    measure_contains = filters.get("measure_contains")
+    measures_in = filters.get("measures_in")
+
+    selectors = [measure is not None, measure_contains is not None, measures_in is not None]
+    if sum(selectors) != 1:
+        raise ValueError("Exactly one of measure, measure_contains, or measures_in must be provided.")
+
+    if measure is not None:
+        where.append("measure = ?")
+        params.append(measure)
+    elif measure_contains is not None:
+        where.append("measure ILIKE ?")
+        params.append(f"%{measure_contains}%")
+    else:
+        if not isinstance(measures_in, list) or not measures_in:
+            raise ValueError("measures_in must be a non-empty list.")
+        placeholders = ",".join(["?"] * len(measures_in))
+        where.append(f"measure IN ({placeholders})")
+        params.extend(measures_in)
+
+    # Always exclude null values
+    where.append("value IS NOT NULL")
+
+    where_clause = " AND ".join(where) if where else "TRUE"
+
+    # Return measure because row_filter questions usually need "which row"
+    # Deterministic tie-breaks (after value): year asc, measure asc, row_id asc
     sql = f"""
-      SELECT label, value, source_file, row_id
-      FROM {TABLE}
-      WHERE {" AND ".join(where)} AND value IS NOT NULL
-      ORDER BY value {order}, row_id ASC
-      LIMIT {limit}
+        SELECT
+            label,  measure,  value,  source_file,  row_id
+        FROM {TABLE}
+        WHERE {where_clause}
+        ORDER BY
+            value {order},
+            year ASC,
+            measure ASC,
+            label ASC,
+            subject ASC,
+            stat_type ASC,
+            row_id ASC
+        LIMIT {limit}
+        OFFSET {offset}
     """
     return sql, params
 

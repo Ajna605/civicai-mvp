@@ -12,7 +12,11 @@ CREATE TABLE IF NOT EXISTS facts (
   raw_value TEXT,
   year INTEGER,
   unit TEXT,
-  geo TEXT
+  geo TEXT,
+  subject TEXT,       
+  stat_type TEXT,
+  raw_row TEXT,
+  raw_col TEXT     
 );
 """
 
@@ -37,13 +41,17 @@ def build_duckdb(db_path: Path, facts_jsonl: Path, rebuild: bool = False) -> Non
         SELECT
           row_number() OVER () AS row_id,
           source_file,
-          label,
-          measure,
-          value,
-          CAST(raw_value AS TEXT) AS raw_value,
-          year,
-          unit,
-          geo
+          label,        #entity being measure, who and where
+          measure,      #metric being measured, what
+          value,        #value used for computation
+          CAST(raw_value AS TEXT) AS raw_value,        #exact string from CSV
+          year,        #time dimension
+          unit,        #%, count, ratio
+          geo,        #explicit geography info, same as label right now
+          subject,        #slice of population (sex, subgroup)
+          stat_type,        #what statistical value
+          raw_row,
+          raw_col
         FROM facts_in;
     """)
 

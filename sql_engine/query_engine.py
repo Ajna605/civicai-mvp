@@ -9,11 +9,12 @@ import duckdb
 from sql_engine import sql_templates as T
 
 def run_structured_query(db_path: Path, category: str, query: Dict[str, Any]) -> Dict[str, Any]:
-    con = duckdb.connect(str(db_path))
+    con = duckdb.connect(str(Path(db_path).resolve()))
 
     if category == "cell_lookup":
         sql, params = T.cell_lookup_sql(query)
         rows = con.execute(sql, params).fetchall()
+
         con.close()
         if not rows:
             return {"ok": False, "error": "no_match", "sql": sql, "params": params}
@@ -22,7 +23,7 @@ def run_structured_query(db_path: Path, category: str, query: Dict[str, Any]) ->
             "ok": True,
             "data": {"value": value},
             "provenance": {"source_file": source_file, "row_id": row_id},
-            "sql": sql,
+            #"sql": sql,
             "params": params,
         }
 
@@ -30,14 +31,26 @@ def run_structured_query(db_path: Path, category: str, query: Dict[str, Any]) ->
         sql, params = T.aggregation_sql(query)
         row = con.execute(sql, params).fetchone()
         con.close()
+
         if row is None:
             return {"ok": False, "error": "no_match", "sql": sql, "params": params}
+
         value, n_rows = row
+
+        op = (query.get("op") or "").lower()
+
+        # Deterministic NO_MATCH handling
+        if n_rows == 0:
+            if op == "count":
+                value = 0
+            else:
+                return {"ok": False, "error": "no_match", "sql": sql, "params": params}
+
         return {
             "ok": True,
-            "data": {"value": value, "n_rows": n_rows},
-            "provenance": {"note": "aggregation", "n_rows": n_rows},
-            "sql": sql,
+            "data": {"value": value, "n": n_rows, "op": op},
+            "provenance": {"note": "aggregation", "n": n_rows},
+            #"sql": sql,
             "params": params,
         }
 
@@ -45,16 +58,21 @@ def run_structured_query(db_path: Path, category: str, query: Dict[str, Any]) ->
         sql, params = T.row_filter_sql(query)
         rows = con.execute(sql, params).fetchall()
         con.close()
+
         if not rows:
             return {"ok": False, "error": "no_match", "sql": sql, "params": params}
-        items = [
-            {"label": r[0], "value": r[1], "source_file": r[2], "row_id": r[3]}
-            for r in rows
-        ]
+
+        select = (query.get("select") or "row").lower()
+
+        items = [{"label": r[0], "measure": r[1], "value": r[2], "source_file": r[3], "row_id": r[4]}
+                for r in rows]
+
+        provenance_rows = [{"source_file": r[3], "row_id": r[4]} for r in rows]
+
         return {
             "ok": True,
             "data": {"rows": items},
-            "provenance": {"top_rows": [{"source_file": x["source_file"], "row_id": x["row_id"]} for x in items]},
+            "provenance": {"top_rows": provenance_rows},
             "sql": sql,
             "params": params,
         }
@@ -71,7 +89,7 @@ def run_structured_query(db_path: Path, category: str, query: Dict[str, Any]) ->
             "ok": True,
             "data": {"points": points},
             "provenance": {"sample": prov, "points": len(points)},
-            "sql": sql,
+            #"sql": sql,
             "params": params,
         }
 

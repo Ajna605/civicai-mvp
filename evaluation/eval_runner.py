@@ -26,6 +26,7 @@ from pathlib import Path
 import re
 from collections import Counter, defaultdict
 from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup
+from utils.text_utils import normalize, contains_all, contains_any, load_tests
 
 
 # -----------------------------
@@ -34,26 +35,6 @@ from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_poli
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # adjust if needed
 DEFAULT_BASE = PROJECT_ROOT / "storage" / "index"
 
-# -----------------------------
-# Text utils
-# -----------------------------
-
-def normalize(text: str) -> str:
-    return " ".join((text or "").lower().split())
-
-
-def contains_any(text: str, needles: List[str]) -> bool:
-    t = normalize(text)
-    return any(normalize(n) in t for n in (needles or []) if n and n.strip())
-
-def contains_all(text: str, needles: List[str]) -> bool:
-    t = normalize(text)
-    return all(normalize(n) in t for n in (needles or []) if n and n.strip())
-
-
-def load_tests(path: str) -> List[Dict[str, Any]]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 # -----------------------------
 # Index + retrieval
