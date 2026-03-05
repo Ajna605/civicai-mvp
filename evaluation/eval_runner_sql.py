@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 from typing import Any, Dict
+from sql_engine.llm_utils.param_gen import load_metadata, llm_make_params
 
 from sql_engine.query_engine import run_structured_query
 
@@ -110,7 +111,13 @@ if __name__ == "__main__":
                 elif cat == "chart_request":
                     points = (res.get("data") or {}).get("points", [])
                     min_points = int(exp.get("min_points", 0))
-                    ok = (len(points) >= min_points)
+                    # Check min points
+                    ok = len(points) >= exp.get("min_points", 0)
+                    xs = [str(p.get("x", "")) for p in points]
+                    haystack = " | ".join(xs)
+                    must = exp.get("must_contain_labels", [])
+                    # Check labels in horizontal axis
+                    ok = all(label.lower() in haystack.lower() for label in must)
                     if not ok:
                         reason = f"insufficient_points pred={len(points)} min={min_points}"
 

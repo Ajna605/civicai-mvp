@@ -14,8 +14,13 @@ def apply_settings():
     Settings.llm = None
 
     # Settings.llm = HuggingFaceLLM(
+        ## 3B for RAG
     #     model_name="Qwen/Qwen2.5-3B-Instruct",
     #     tokenizer_name="Qwen/Qwen2.5-3B-Instruct",
+        ##14B for SQL param generation
+    #     model_name="Qwen/Qwen2.5-14B-Instruct",
+    #     tokenizer_name="Qwen/Qwen2.5-14B-Instruct",
+        ##7B Middleway
     #     # model_name="Qwen/Qwen2.5-7B-Instruct",   # safer than 14B for iteration
     #     # tokenizer_name="Qwen/Qwen2.5-7B-Instruct",
     #     context_window=8192,
