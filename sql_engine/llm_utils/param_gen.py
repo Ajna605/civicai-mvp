@@ -5,7 +5,8 @@ from pathlib import Path
 from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt
 from typing import Dict, Any
 from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_llm
-from sql_engine.llm_utils.query_guards import direct_measure_first_guard
+from sql_engine.llm_utils.query_guards import direct_measure_first_guard, age_range_sum_guard
+
 
 def load_metadata(path: str | None = None) -> dict:
     # If no path passed, load metadata.json that sits next to this file (llm_utils/)
@@ -25,12 +26,16 @@ def llm_make_params(
     max_repairs: int = 2
 ) -> Dict[str, Any]:
 
-    # First attempt
-    prompt = make_param_prompt(question, metadata, constraints)
+    c1 = age_range_sum_guard(question, metadata)
+    if c1:
+        constraints = c1                       # highest priority
+    else:
+        constraints = direct_measure_first_guard(question, metadata)  # fallback
+
+    prompt = make_param_prompt(question, metadata, constraints=constraints)
     raw = generate_json_only(PARAM_LLM, prompt).strip()
 
     for attempt in range(max_repairs + 1):
-
         try:
             obj = json.loads(raw)
         except Exception:
@@ -54,13 +59,13 @@ def llm_make_params(
 
     raise ValueError(f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}")
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    question = "How many males per 100 females?"
-    metadata = load_metadata()
+#     question = "How many males per 100 females?"
+#     metadata = load_metadata()
 
-    # Deterministic logic to override LLM guessing
-    measure_override = direct_measure_first_guard(question, metadata)
+#     # Deterministic logic to override LLM guessing
+#     measure_override = direct_measure_first_guard(question, metadata)
 
-    result = llm_make_params(question, metadata, measure_override)
-    print(json.dumps(result, indent=2))
+#     result = llm_make_params(question, metadata, measure_override)
+#     print(json.dumps(result, indent=2))

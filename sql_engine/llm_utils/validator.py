@@ -92,3 +92,19 @@ def llm_cell_lookup(question: str, meta: Dict[str, Any], llm_complete_fn, max_re
         raw = llm_complete_fn(build_repair_prompt(question, json.dumps(obj, ensure_ascii=False), err, meta)).strip()
 
     raise ValueError(f"Could not produce valid cell_lookup JSON after repairs. Last: {raw[:300]}")
+
+## No mixing labels from different headings
+def validate_no_mixed_measure_groups(query: dict, meta: dict) -> tuple[bool, str]:
+    mtg = meta.get("measure_to_group", {})
+    measures_in = query.get("filters", {}).get("measures_in")
+    if not measures_in:
+        return True, "ok"
+
+    groups = {mtg.get(m) for m in measures_in if m in mtg}
+    groups.discard(None)
+
+    if len(groups) <= 1:
+        return True, "ok"
+
+    return False, f"mixed_measure_groups:{sorted(groups)}"
+

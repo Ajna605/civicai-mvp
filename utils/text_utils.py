@@ -1,8 +1,6 @@
 import re
-import unicodedata
-from typing import Iterable, Optional, List, Dict, Any
+from typing import List, Dict, Any
 import json
-from pathlib import Path
 
 
 def clean_text(s: str) -> str:

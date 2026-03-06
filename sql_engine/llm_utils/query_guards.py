@@ -159,3 +159,79 @@ def direct_measure_first_guard(question: str, meta: dict, threshold: float = 0.5
         "score": score,
         "reason": "direct_measure_match"
     }
+
+
+UNDER_RE = re.compile(r"\b(under|less than|below)\s+(\d{1,3})\b", re.I)
+RANGE_RE = re.compile(r"^\s*(\d{1,3})\s*(?:to|\-)\s*(\d{1,3})\s+year", re.I)
+UNDER_MEASURE_RE = re.compile(r"^\s*under\s+(\d{1,3})\s+year", re.I)
+
+def parse_age_band(measure: str) -> Optional[Tuple[int, int]]:
+    """
+    Returns (low, high) inclusive bounds for age bands in measure strings like:
+    - "Under 5 years" -> (0, 4)
+    - "20 to 24 years" -> (20, 24)
+    - "85 years and over" -> (85, 10**9)  (not used for under-X)
+    """
+    m = UNDER_MEASURE_RE.match(measure)
+    if m:
+        high = int(m.group(1)) - 1
+        return (0, high)
+
+    m = RANGE_RE.match(measure)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+
+    if "and over" in measure.lower():
+        nums = re.findall(r"\d{1,3}", measure)
+        if nums:
+            low = int(nums[0])
+            return (low, 10**9)
+
+    return None
+
+def age_under_measures_in(target: int, measures: List[str]) -> List[str]:
+    """
+    Select age bands whose upper bound <= target.
+    For ACS-style, target=24 should include "20 to 24 years".
+    """
+    bands = []
+    for m in measures:
+        b = parse_age_band(m)
+        if not b:
+            continue
+        low, high = b
+        if high <= target:
+            bands.append((low, high, m))
+
+    # sort by low bound to keep x-axis natural
+    bands.sort(key=lambda x: x[0])
+    return [m for _, _, m in bands]
+
+def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
+    measures = meta.get("measures", []) or []
+    m = UNDER_RE.search(question)
+    if not m:
+        return None
+
+    target = int(m.group(2))
+
+    # Case 1: dataset already has "Under X years" bucket -> allow direct cell lookup
+    direct = f"Under {target} years"
+    if direct in measures:
+        return {
+            "force_category": "cell_lookup",
+            "force_measure": direct,
+            "reason": "direct_under_bucket"
+        }
+
+    # Case 2: build measures_in list deterministically -> force aggregation sum
+    measures_in = age_under_measures_in(target, measures)
+    if not measures_in:
+        return None  # no usable bands found
+
+    return {
+        "force_category": "aggregation",
+        "force_op": "sum",
+        "force_measures_in": measures_in,
+        "reason": "under_range_sum"
+    }

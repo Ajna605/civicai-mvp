@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from sql_engine.llm_utils.query_guards import direct_measure_first_guard
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
+from sql_engine.llm_utils.validator import validate_no_mixed_measure_groups
+
 DEFAULT_SUBJECT = "Total"
 DEFAULT_STAT_TYPE = "Estimate"
 
@@ -66,6 +68,10 @@ def main():
 
             # basic “schema present” check (swap with your real validator later)
             schema_pass = isinstance(pred_cat, str) and isinstance(pred_query, dict)
+            ok, reason = validate_no_mixed_measure_groups(pred_query, meta)
+            if not ok:
+                return False, reason
+
             rec["schema_pass"] = schema_pass
             if schema_pass:
                 json_and_schema_ok += 1
