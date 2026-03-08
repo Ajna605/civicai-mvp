@@ -6,7 +6,7 @@ from sql_engine.llm_utils.validator import build_repair_prompt, make_param_promp
 from typing import Dict, Any
 from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_llm
 from sql_engine.llm_utils.query_guards import direct_measure_first_guard, age_range_sum_guard
-
+import time
 
 def load_metadata(path: str | None = None) -> dict:
     # If no path passed, load metadata.json that sits next to this file (llm_utils/)
@@ -23,7 +23,7 @@ def llm_make_params(
     question: str,
     metadata: Dict[str, Any],
     constraints: dict | None = None,
-    max_repairs: int = 2
+    max_repairs: int = 0 ##DEBUG
 ) -> Dict[str, Any]:
 
     c1 = age_range_sum_guard(question, metadata)
@@ -33,7 +33,10 @@ def llm_make_params(
         constraints = direct_measure_first_guard(question, metadata)  # fallback
 
     prompt = make_param_prompt(question, metadata, constraints=constraints)
+    t0 = time.time()
     raw = generate_json_only(PARAM_LLM, prompt).strip()
+    print("llm seconds:", round(time.time() - t0, 2))
+    print("raw repr:", len(raw))
 
     for attempt in range(max_repairs + 1):
         try:

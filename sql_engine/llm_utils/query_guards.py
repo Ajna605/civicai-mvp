@@ -1,6 +1,7 @@
 import re
 import math
 from typing import Dict, List, Optional, Tuple, Any, Set
+from collections import Counter
 
 NUM_RE = re.compile(r"\b\d{1,3}\b")
 
@@ -151,7 +152,6 @@ def direct_measure_first_guard(question: str, meta: dict, threshold: float = 0.5
         if m_nums and q_nums and not m_nums.issubset(q_nums):
             return None
         
-    print("GUARD FIRE:", measure, score) 
     ## all return cell_lookup as info is in table
     return {
         "force_category": "cell_lookup",
@@ -235,3 +235,5 @@ def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
         "force_measures_in": measures_in,
         "reason": "under_range_sum"
     }
+
+

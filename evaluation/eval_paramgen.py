@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from sql_engine.llm_utils.query_guards import direct_measure_first_guard
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
-from sql_engine.llm_utils.validator import validate_no_mixed_measure_groups
+from sql_engine.llm_utils.validator import validate_measure_group_consistency
 
 DEFAULT_SUBJECT = "Total"
 DEFAULT_STAT_TYPE = "Estimate"
@@ -51,7 +51,7 @@ def main():
     for ex in items:
         qid = ex.get("id")
         question = ex["question"]
-        print(question)
+        print("question", question)
         gold_cat = ex["category"]
         gold_query = ex.get("query", {})
 
@@ -62,18 +62,23 @@ def main():
         try:
             pred = llm_make_params(question, meta, max_repairs=args.max_repairs, constraints=measure_override)
             rec["pred"] = pred
+            print("pred chars:", len(pred))
 
             pred_cat = pred.get("category")
             pred_query = pred.get("query")
 
-            # basic “schema present” check (swap with your real validator later)
+            # basic JSON/schema presence
             schema_pass = isinstance(pred_cat, str) and isinstance(pred_query, dict)
-            ok, reason = validate_no_mixed_measure_groups(pred_query, meta)
-            if not ok:
-                return False, reason
 
-            rec["schema_pass"] = schema_pass
-            if schema_pass:
+            # semantic validation: measure_group consistency
+            group_ok, group_reason = validate_measure_group_consistency(pred, meta)
+
+            rec["schema_pass"] = schema_pass and group_ok
+            rec["schema_reason"] = "ok" if (schema_pass and group_ok) else (
+                "missing_category_or_query" if not schema_pass else group_reason
+            )
+
+            if rec["schema_pass"]:
                 json_and_schema_ok += 1
 
             rec["pred_category"] = pred_cat
@@ -81,8 +86,8 @@ def main():
             if rec["category_match"]:
                 cat_ok += 1
 
-            # Exact match against gold query (after gold normalization)
-            rec["query_exact_match"] = exact_match(pred_query, gold_query)
+            # Only do exact query match if schema/semantic validation passed
+            rec["query_exact_match"] = rec["schema_pass"] and exact_match(pred_query, gold_query)
             if rec["query_exact_match"]:
                 query_exact_ok += 1
 

@@ -72,39 +72,29 @@ def build_repair_prompt(question: str, bad_json: str, error: str, meta: Dict[str
         f"METADATA:\n{json.dumps(meta, ensure_ascii=False)}\n"
     )
 
-def llm_cell_lookup(question: str, meta: Dict[str, Any], llm_complete_fn, max_repairs: int = 2) -> Dict[str, Any]:
-    # llm_complete_fn(prompt: str) -> str
-    prompt = make_param_prompt(question, meta)
-    raw = llm_complete_fn(prompt).strip()
+## Making sure Measure Headings are not mixed 
+def validate_measure_group_consistency(query: dict, meta: dict):
+    q = query.get("query", query)
+    filters = q.get("filters", {})
+    measures_in = filters.get("measures_in")
+    measure_group = q.get("measure_group")
 
-    for attempt in range(max_repairs + 1):
-        try:
-            obj = json.loads(raw)
-        except Exception:
-            err = "invalid_json"
-            raw = llm_complete_fn(build_repair_prompt(question, raw, err, meta)).strip()
-            continue
-
-        ok, err = validate_cell_lookup(obj, meta)
-        if ok:
-            return obj
-
-        raw = llm_complete_fn(build_repair_prompt(question, json.dumps(obj, ensure_ascii=False), err, meta)).strip()
-
-    raise ValueError(f"Could not produce valid cell_lookup JSON after repairs. Last: {raw[:300]}")
-
-## No mixing labels from different headings
-def validate_no_mixed_measure_groups(query: dict, meta: dict) -> tuple[bool, str]:
-    mtg = meta.get("measure_to_group", {})
-    measures_in = query.get("filters", {}).get("measures_in")
     if not measures_in:
         return True, "ok"
 
-    groups = {mtg.get(m) for m in measures_in if m in mtg}
-    groups.discard(None)
+    if not measure_group:
+        return False, "missing_measure_group"
 
-    if len(groups) <= 1:
-        return True, "ok"
+    groups = meta.get("measure_groups", {})
+    allowed = set(groups.get(measure_group, []))
 
-    return False, f"mixed_measure_groups:{sorted(groups)}"
+    if not allowed:
+        return False, f"unknown_measure_group:{measure_group}"
+
+    bad = [m for m in measures_in if m not in allowed]
+    if bad:
+        return False, f"measures_not_in_group:{bad}"
+
+    return True, "ok"
+
 

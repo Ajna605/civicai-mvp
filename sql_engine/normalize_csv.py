@@ -107,17 +107,26 @@ def normalize_csv_to_facts(
                 "subject": str(row.get(subject_c)).strip() if subject_c and pd.notna(row.get(subject_c)) else None,
                 "stat_type": str(row.get(stat_type_c)).strip() if stat_type_c and pd.notna(row.get(stat_type_c)) else None,
                 # Provenance
-                "raw_row": row_stat,   # original row statistic text
-                "raw_col": col,        # original column header text
+                "raw_row": str(row.get(label_c, "")).strip(),
+                "raw_col": value_c,
+                "orig_row_id": int(i),
+                "orig_col_id": int(df.columns.get_loc(value_c)),
             })
         return out
 
     # Otherwise assume wide → melt
+    df = df.reset_index().rename(columns={"index": "orig_row_id"})
+    col_id_map = {c: idx for idx, c in enumerate(df.columns)}
     stat_col = infer_label_col(df)
     id_vars = [stat_col]
     value_vars = [c for c in df.columns if c != stat_col]
-
-    melted = df.melt(id_vars=id_vars, value_vars=value_vars, var_name="col", value_name="raw_value")
+    
+    melted = df.melt(
+        id_vars=["orig_row_id"] + id_vars,
+        value_vars=value_vars,
+        var_name="col",
+        value_name="raw_value"
+    )
     out: List[Dict[str, Any]] = []
 
     is_acs = any("!!" in str(c) for c in df.columns)
@@ -134,6 +143,9 @@ def normalize_csv_to_facts(
         subject = None
         stat_type = None
         year = None
+
+        orig_row_id = int(r["orig_row_id"])
+        orig_col_id = int(col_id_map[col])
 
         # Case 1: Year columns (typical time-series wide table)
         if _looks_like_year(col):
@@ -169,7 +181,9 @@ def normalize_csv_to_facts(
             "subject": subject,
             "stat_type": stat_type,
             "raw_row": clean_text(r[stat_col]),  # or label_c depending on your taste
-            "raw_col": r["col"], 
+            "raw_col": r["col"],
+            "orig_row_id": orig_row_id ,
+            "orig_col_id": orig_col_id  
         })
 
     return out
