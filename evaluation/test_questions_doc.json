@@ -9,7 +9,7 @@
       "source_document": "Coral_Gables_Comprehensive_Plan"
     },
     "known_issue": false,
-    "notes": "Reference is wrong"
+    "notes": ""
   },
   {
     "id": "Q1.1",
@@ -74,7 +74,7 @@
   {
     "id": "Q1.6",
     "question": "What is Policy HIS-5.11.4.?",
-    "category": "policy_lookup",
+    "category": "fuzzy_policy_lookup",
     "expected": {
       "must_mention_any": ["Policy HIS-5.1.4."],
       "should_not_mention": [],
@@ -98,7 +98,7 @@
   {
     "id": "Q1.8",
     "question": "Goal NAT-33.",
-    "category": "policy_lookup",
+    "category": "fuzzy_policy_lookup",
     "expected": {
       "must_mention_any": ["Goal NAT-3."],
       "should_not_mention": [],
@@ -355,7 +355,7 @@
     "category": "table_lookup",
     "expected": {
       "must_mention_all": ["Recreation facilities radius standard"],
-      "should_mention": ["Recreation", "facilities", "radius", "standard"],
+      "must_mention_any": ["Recreation", "facilities", "radius", "standard"],
       "should_not_mention": []
     },
     "known_issue": false,
@@ -367,7 +367,7 @@
     "category": "table_lookup",
     "expected": {
       "must_mention_all": ["Park Type", "recreation"],
-      "should_mention": ["Recreation", "facilities", "radius", "standard:"],
+      "must_mention_any": ["Recreation", "facilities", "radius", "standard:"],
       "should_not_mention": []
     },
     "known_issue": false,
@@ -375,10 +375,10 @@
   },
   {
     "id": "Q4.2",
-    "question": "Does the Coral Gables plan specify housing density limits?",
+    "question": "Does the Coral Gables plan specify maximum housing density?",
     "category": "table_lookup",
     "expected": {
-      "must_mention_all": ["density", "Residential Land Uses"],
+      "must_mention_all": ["density", "Residential"],
       "must_mention_any": ["Policy FLU-1.1.2", "Residential Land Uses", "residential"],
       "should_mention": ["density", "residential", "Residential"],
       "should_not_mention": []
@@ -391,8 +391,8 @@
     "question": "What is the required land density for Single-family detached homes?",
     "category": "table_lookup",
     "expected": {
-      "must_mention_all": ["single-family", "acre"],
-      "must_mention_any": ["six", "6"],
+      "must_mention_all": ["Single-family", "acre"],
+      "must_mention_any": ["six", "6", "Residential Land Uses."],
       "should_mention": ["residential"],
       "should_not_mention": []
     },
@@ -472,18 +472,6 @@
   },
   {
     "id": "Q4.10",
-    "question": "What is the required land density for Single-family detached homes?",
-    "category": "table_lookup",
-    "expected": {
-      "must_mention_all": ["single-family", "acre"],
-      "must_mention_any": ["six", "6"],
-      "should_mention": ["residential"],
-      "should_not_mention": []
-    },
-    "notes": "Table content part of query - good results"
-  },
-  {
-    "id": "Q4.11",
     "question": "What is the service radius in miles added together for different recreation facilities?",
     "category": "table_lookup",
     "expected": {

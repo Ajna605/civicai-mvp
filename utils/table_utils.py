@@ -1,81 +1,120 @@
-from typing import List
-from utils.text_utils import clean_text
+from docx.document import Document as _Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
 from docx.table import Table
+from docx.text.paragraph import Paragraph
+from utils.hash_utils import short_hash
+from pathlib import Path
+from typing import Any
+import re
 
-# ----------------------------
-# Table detection
-# ----------------------------
-def table_dims(raw_text: str) -> tuple[int, int]:
-    lines = [ln.strip() for ln in (raw_text or "").splitlines() if ln.strip()]
-    rows = len(lines)
-    # estimate cols from the first "pipe" line
-    pipe_lines = [ln for ln in lines if "|" in ln]
-    if not pipe_lines:
-        return rows, 0
-    # number of cells ≈ number of pipes - 1 (for boundary pipes)
-    cols = max((max(0, ln.count("|") - 1) for ln in pipe_lines), default=0)
-    return rows, cols
+def clean_text(text: str) -> str:
+    return " ".join(text.split()).strip()
 
-def looks_like_table(raw: str) -> bool:
-    if not raw or raw.strip() == "":
-        return False
-    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-    # must have at least 2 lines with pipes
-    pipe_lines = [ln for ln in lines if "|" in ln]
-    if len(pipe_lines) < 2:
-        return False
-    # reject obvious narrative lists like "evaluation of the following"
-    # (caption check can also be added, but keep it here purely text-based)
-    bulletish = sum(1 for ln in lines[:6] if ln.startswith(("•", "-", "*")))
-    # allow bullet-ish tables only if they look like 2+ columns consistently
-    if bulletish >= 2:
-        # require that most pipe lines have at least 2 separators (=> 3 cells),
-        # otherwise it's probably just "• | item"
-        rich = sum(1 for ln in pipe_lines if ln.count("|") >= 2)
-        if rich == 0:
-            return False
-    return True
+def iter_block_items(parent):
+    parent_elm = parent.element.body
 
-def table_tier(caption: str | None, raw_text: str) -> str:
-    rows, cols = table_dims(raw_text)
-    cap_ok = bool(caption) and ("table" in (caption or "").lower())
-    if cap_ok and ((rows >= 6) or (cols >= 3)):
-        return "A"
-    return "B"
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, parent)
 
-# ----------------------------
-# Table formatting
-# ----------------------------
-def table_to_markdown(tbl: Table) -> str:
-    rows: List[List[str]] = []
-    for row in tbl.rows:
-        cells = []
-        for cell in row.cells:
-            c = clean_text(cell.text)
-            c = (c or "").replace("|", "\\|")  # escape pipes
-            cells.append(c)
-        rows.append(cells)
+def is_heading(paragraph: Paragraph) -> bool:
+    style_name = paragraph.style.name if paragraph.style else ""
+    return style_name.startswith("Heading")
 
-    rows = [r for r in rows if any(c.strip() for c in r)]
-    if not rows:
-        return ""
+def get_heading_level(paragraph: Paragraph) -> int:
+    style_name = paragraph.style.name if paragraph.style else ""
+    m = re.search(r"Heading\s+(\d+)", style_name)
+    return int(m.group(1)) if m else 1
 
-    n_cols = max(len(r) for r in rows)
-    rows = [r + [""] * (n_cols - len(r)) for r in rows]
+def update_section_path(current_headings: list[str], level: int, text: str) -> list[str]:
+    while len(current_headings) >= level:
+        current_headings.pop()
+    current_headings.append(text)
+    return current_headings
 
-    first = rows[0]
-    headerish = all(c.strip() for c in first) and sum(len(c) for c in first) <= 200
+def extract_table_rows(table: Table) -> list[list[str]]:
+    rows = []
+    for row in table.rows:
+        row_cells = [clean_text(cell.text) for cell in row.cells]
+        rows.append(row_cells)
+    return rows
 
-    if headerish:
-        header = first
-        body = rows[1:]
-    else:
-        header = [f"col_{i+1}" for i in range(n_cols)]
-        body = rows
+def find_table_caption(recent_paragraphs: list[dict]) -> str | None:
+    for p in reversed(recent_paragraphs[-3:]):
+        text = p["text"]
+        if re.match(r"^(Table|TABLE)\b", text):
+            return text
+    return None
 
-    md: List[str] = []
-    md.append("| " + " | ".join(header) + " |")
-    md.append("| " + " | ".join(["---"] * n_cols) + " |")
-    for r in body:
-        md.append("| " + " | ".join((c if c else " ") for c in r) + " |")
-    return "\n".join(md)
+def find_preceding_text(recent_paragraphs: list[dict], caption: str | None) -> str | None:
+    texts = []
+    for p in recent_paragraphs[-3:]:
+        if caption and p["text"] == caption:
+            continue
+        texts.append(p["text"])
+    return " ".join(texts[-2:]) if texts else None
+
+def is_repeated_title_row(row: list[str]) -> bool:
+    vals = [x.strip() for x in row if x and x.strip()]
+    return len(vals) > 1 and len(set(vals)) == 1
+
+## Creates RAG chunks from table summary used in build corpus
+def build_table_summary_chunks(
+    table_records: list[dict[str, Any]],
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+
+    for tbl in table_records:
+        source_path = tbl.get("source_file")
+        doc_id = Path(source_path).stem if source_path else "doc"
+        table_id = tbl.get("table_id")
+        table_index = tbl.get("table_index", 0)
+        section_path = tbl.get("section_path", []) or []
+        caption = (tbl.get("caption") or "").strip()
+        preceding_text = (tbl.get("preceding_text") or "").strip()
+        header_terms = tbl.get("header_terms", []) or []
+        rows = tbl.get("rows", []) or []
+
+        example_labels = []
+        for row in rows[:2]:
+            if row and str(row[0]).strip():
+                example_labels.append(str(row[0]).strip())
+
+        parts = []
+        if caption:
+            parts.append(caption)
+        if preceding_text:
+            parts.append(preceding_text)
+        if header_terms:
+            parts.append("Columns: " + ", ".join(str(h).strip() for h in header_terms if str(h).strip()))
+        if example_labels:
+            parts.append("Example categories: " + "; ".join(example_labels))
+
+        text = " ".join(parts).strip()
+        if not text:
+            continue
+
+        chunks.append({
+            "id": f"{table_id}__summary__c0__{short_hash(text)}",
+            "doc_id": doc_id,
+            "source_path": source_path,
+            "section_path": section_path,
+            "section_index": -1,
+            "block_type": "table_summary",
+            "block_index": table_index,
+            "text": text,
+            "extra": {
+                "source": source,
+                "table_id": table_id,
+                "table_index": table_index,
+                "caption": caption or None,
+                "header_terms": header_terms,
+            },
+        })
+
+    return chunks

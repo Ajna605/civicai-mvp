@@ -27,6 +27,7 @@ import re
 from collections import Counter, defaultdict
 from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup
 from utils.text_utils import normalize, contains_all, contains_any, load_tests
+from rag.retrieval.table_rerank import table_aware_retrieve
 
 
 # -----------------------------
@@ -77,7 +78,6 @@ def safe_node_meta(r: Any) -> Dict[str, Any]:
         return r.node.metadata or {}
     except Exception:
         return {}
-
 
 # -----------------------------
 # Expected schema helpers
@@ -327,6 +327,27 @@ def select_diag_node_summary(retrieved_nodes_k: List[Any], expected: Dict[str, A
             return r
     return retrieved_nodes_k[0]
 
+## getting block_type and caption from node
+# def build_eval_text(txt: str, md: dict) -> str:
+#     parts = [txt]
+
+#     if isinstance(md, dict):
+#         if md.get("block_type"):
+#             parts.append(str(md["block_type"]))
+
+#         section_path = md.get("section_path")
+#         if isinstance(section_path, list):
+#             parts.append(" > ".join(str(x) for x in section_path))
+
+#         if md.get("caption"):
+#             parts.append(str(md["caption"]))
+
+#         header_terms = md.get("header_terms")
+#         if isinstance(header_terms, list):
+#             parts.append(" ".join(str(x) for x in header_terms))
+
+#     return " ".join(p for p in parts if p).strip()
+
 
 def evaluate_one(
     index,
@@ -357,7 +378,8 @@ def evaluate_one(
         texts.append(txt)
         metas.append(md)
         relevances.append(is_relevant(txt, category, expected))
-
+    
+    top_block_type = (metas[0] or {}).get("block_type") if metas else None
     hit_at_k = 1 if any(relevances) else 0
 
     mrr = 0.0
@@ -384,6 +406,7 @@ def evaluate_one(
     diag_node = None
     if category in ("policy_lookup", "section_lookup", "table_lookup"):
         diag_node = select_diag_node_lookup(nodes_k, expected)
+        
     elif category in ("general_summary",):
         diag_node = select_diag_node_summary(nodes_k, expected)
     else:
@@ -408,6 +431,7 @@ def evaluate_one(
         corpus_cnt = corpus_match_count(index, primary_tok)
 
         diag_nodes = get_retrieved_nodes(index, question, top_k=diag_k)
+
         diag_rels = [is_relevant(safe_node_text(n), category, expected) for n in diag_nodes]
         hit_at_diag = 1 if any(diag_rels) else 0
         diag_match_count = sum(1 for x in diag_rels if x)
@@ -450,6 +474,7 @@ def evaluate_one(
         "top_snippets": top_snips,
         "first_relevant_source": rel_source,
         "first_relevant_snippet": rel_snip,
+        "top_block_type": top_block_type,
 
         # diagnostics
         "corpus_match_count": corpus_cnt,
@@ -682,6 +707,7 @@ def main():
     ap.add_argument("--out_dir", default="eval_outputs")
     ap.add_argument("--fail_on_gate", action="store_true", help="Exit nonzero if acceptance criteria fail")
     ap.add_argument("--format", default="docx", required = True)
+    ap.add_argument("--table_index", default="docx_tables", required = False)
 
     args = ap.parse_args()
 
@@ -693,25 +719,43 @@ def main():
     out_csv = os.path.join(args.out_dir, f"results_{stamp}.csv")
     out_gate = os.path.join(args.out_dir, f"gate_{stamp}.json")
 
-    index = get_index(args.format)
+    doc_index = get_index(args.format)
+    table_index = None # Optional
+    if args.table_index:
+        try:
+            table_index = get_index(args.table_index)
+        except Exception as e:
+            print(f"[eval_runner_doc] Warning: could not load table index '{args.table_index}': {e}")
+            table_index = None
 
     results: List[Dict[str, Any]] = []
-    code_map = build_code_map_from_index(index)
+    code_map = build_code_map_from_index(doc_index)
 
     for t in tests:
         q = t.get("question", "")
         if t.get("category") == "policy_lookup":
             retrieved = retrieve_policy_lookup(
-                index,
+                doc_index,
                 q,
                 k_eval=args.k_eval,                 # evaluate top k
                 top_k_retrieve=args.top_k_retrieve, # pool
                 code_map=code_map,
             )
         else:
-            retrieved = get_retrieved_nodes(index, q, top_k=args.top_k_retrieve)
+            # plain doc retrieval if no table index exists
+            if table_index is None:
+                retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
+            else:
+                retrieved = table_aware_retrieve(
+                    question=q,
+                    doc_index=doc_index,
+                    row_index=table_index,
+                    top_k_docs=args.top_k_retrieve,
+                    top_k_rows=20,
+                    final_top_k=args.top_k_retrieve,
+                )
 
-        res = evaluate_one(index, t, retrieved, k_eval=args.k_eval, diag_k=args.diag_k)
+        res = evaluate_one(doc_index, t, retrieved, k_eval=args.k_eval, diag_k=args.diag_k)
         results.append(res)
 
         # Per-test line

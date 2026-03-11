@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Iterable
 from utils.hash_utils import short_hash
 from utils.text_utils import clean_text
-from utils.table_utils import table_dims, table_tier, looks_like_table
+from utils. table_utils import build_table_summary_chunks
 
 # ----------------------------
 # Paths (repo-aware)
@@ -22,10 +22,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max_chars", type=int, default=1400)
     p.add_argument("--overlap_chars", type=int, default=200)
     p.add_argument("--no_dedupe", action="store_true", help="Disable deduplication")
-    p.add_argument("--keep_only_tier_a_tables", action="store_true", default=False)
     return p.parse_args()
-
-
 
 # ----------------------------
 # Chunking
@@ -92,18 +89,6 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
 # ----------------------------
 # Iterate blocks in doc order
 # ----------------------------
-def iter_block_items(doc: Document) -> Iterator[Tuple[str, Any]]:
-    """
-    Yield ("p", Paragraph) or ("tbl", Table) in the order they appear.
-    """
-    parent = doc.element.body
-    for child in parent.iterchildren():
-        if isinstance(child, CT_P):
-            yield "p", Paragraph(child, doc)
-        elif isinstance(child, CT_Tbl):
-            yield "tbl", Table(child, doc)
-
-
 def block_to_text(block: Dict[str, Any]) -> str:
     t = block.get("type")
     if t in ("text", "paragraph"):
@@ -127,8 +112,7 @@ def build_chunks_for_section(
     overlap_chars: int,
     dedupe: bool,
     seen: set[str],
-    chunks_f,
-    keep_only_tier_a_tables: bool,
+    chunks_f
 ) -> int:
     """Returns number of chunks written for this section."""
     doc_id = sec.get("doc_id", "doc")
@@ -185,66 +169,6 @@ def build_chunks_for_section(
     for block_ordinal, blk in enumerate(blocks):
         btype = blk.get("type")
 
-        # ---- TABLES: atomic chunks (don’t mix with narrative buffer) ----
-        if btype == "table":
-            flush_text(block_ordinal)
-
-            caption = (blk.get("caption") or "").strip() or None
-            raw_table = (blk.get("raw_text") or "").strip()
-            if not raw_table:
-                continue
-            if not looks_like_table(raw_table):
-                continue
-
-            tier = table_tier(caption, raw_table)
-            rows, cols = table_dims(raw_table)
-            if keep_only_tier_a_tables and tier != "A":
-                continue
-
-            table_text = f"{caption}\n\n{raw_table}" if caption else raw_table
-            if title:
-                table_text = clean_text(f"{title}\n\n{table_text}")
-
-            table_id = blk.get("table_id") or "tbl"
-            page = blk.get("page", -1)
-
-            for i, ch in enumerate(chunk_text(table_text, max_chars=max_chars, overlap_chars=overlap_chars)):
-                ch = clean_text(ch)
-                if not ch:
-                    continue
-
-                item = {
-                    "id": f"{doc_id}__s{section_index}__t{short_hash(str(table_id))}__c{i}__{short_hash(ch)}",
-                    "doc_id": doc_id,
-                    "source_path": source_path,
-                    "section_path": section_path,
-                    "section_index": section_index,
-                    "block_type": "table",
-                    "block_index": block_ordinal,
-                    "text": ch,
-                    "extra": {
-                        "source": source,
-                        "table_id": table_id,
-                        "caption": caption,
-                        "page": page,
-                        "table_tier": tier,
-                        "table_rows": rows,
-                        "table_cols": cols,
-                    },
-                }
-
-                if dedupe:
-                    key = f"{doc_id}|{' > '.join(section_path)}|table|{ch}"
-                    h = short_hash(key)
-                    if h in seen:
-                        continue
-                    seen.add(h)
-
-                chunks_f.write(json.dumps(item, ensure_ascii=False) + "\n")
-                written += 1
-
-            continue
-
         # ---- NARRATIVE: accumulate and chunk as section text ----
         txt = block_to_text(blk)
         if txt and txt.strip():
@@ -253,13 +177,13 @@ def build_chunks_for_section(
     flush_text(block_ordinal=len(blocks))
     return written
 
-
-
 def main() -> None:
     args = parse_args()
     base_dir = NORMALIZED_BASE / args.source
     sections_file = base_dir / "sections.jsonl"
     chunks_file = base_dir / "rag_chunks.jsonl"
+    tables_file = NORMALIZED_BASE / "doc_tables" / "raw_tables.jsonl"
+
 
     if not sections_file.exists():
         raise FileNotFoundError(f"Missing {sections_file}. Run ingest_documents first.")
@@ -269,6 +193,7 @@ def main() -> None:
     seen: set[str] = set()
     total_sections = 0
     total_chunks = 0
+    total_table_chunks = 0
 
     with open(chunks_file, "w", encoding="utf-8") as chunks_f:
         for sec in read_jsonl(sections_file):
@@ -278,20 +203,35 @@ def main() -> None:
                 source=args.source,
                 max_chars=args.max_chars,
                 overlap_chars=args.overlap_chars,
-                dedupe = not args.no_dedupe,
+                dedupe=not args.no_dedupe,
                 seen=seen,
                 chunks_f=chunks_f,
-                keep_only_tier_a_tables=args.keep_only_tier_a_tables,
             )
+        print(tables_file.exists())
+        if tables_file.exists():
+            table_records = list(read_jsonl(tables_file))
+            table_summary_chunks = build_table_summary_chunks(
+                table_records=table_records,
+                source=args.source,
+            )
+
+            for chunk in table_summary_chunks:
+                if not args.no_dedupe:
+                    key = f"{chunk['doc_id']}|{' > '.join(chunk.get('section_path', []))}|table_summary|{chunk['text']}"
+                    h = short_hash(key)
+                    if h in seen:
+                        continue
+                    seen.add(h)
+
+                chunks_f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+                total_table_chunks += 1
 
     print(f"[build_corpus] Source={args.source}")
     print(f"[build_corpus] Read {total_sections} sections from {sections_file}")
-    print(f"[build_corpus] Wrote {total_chunks} chunks → {chunks_file}")
-    print(
-        f"[build_corpus] Params: max_chars={args.max_chars}, overlap_chars={args.overlap_chars}, "
-        f"no_dedupe={args.no_dedupe}, keep_only_tier_a_tables={args.keep_only_tier_a_tables}"
+    print(f"[build_corpus] Wrote {total_chunks + total_table_chunks} chunks → {chunks_file}")
+    print(f"[build_corpus] Included {total_table_chunks} table summary chunks from {tables_file}")
+    print(f"[build_corpus] Params: max_chars={args.max_chars}, overlap_chars={args.overlap_chars}, "
+        f"no_dedupe={args.no_dedupe}"
     )
-
-
 if __name__ == "__main__":
     main()

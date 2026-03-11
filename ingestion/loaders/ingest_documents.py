@@ -3,12 +3,12 @@ import argparse
 import json
 import re
 from dataclasses import asdict
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Path, Set
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Set
 from pathlib import Path
 from ingestion.normalize.normalize_pdf import normalize_pdf
-from ingestion.normalize.normalize_csv import normalize_csv
 from ingestion.schema.document_schema import NormalizedDoc, SectionRecord
-from utils.table_utils import table_to_markdown
+from ingestion.loaders.document_tables import extract_tables_for_source
+from ingestion.normalize.process_tables import normalize_extracted_tables, normalize_all_table_rows
 
 from docx import Document
 from docx.oxml.table import CT_Tbl
@@ -33,22 +33,22 @@ def parse_args():
 def default_out_for(source: str) -> Path:
     return NORMALIZED_DIR / source / "sections.jsonl"
 
+
+table_out_path = NORMALIZED_DIR / "doc_tables" / "raw_tables.jsonl"
+row_out_path = NORMALIZED_DIR / "doc_tables" / "table_rows.jsonl"
+
 # ----------------------------
 # File type functions
 # ----------------------------
 
 SOURCE_EXTENSIONS = {
     "pdf": [".pdf"],
-    "docx": [".docx"],
-    "csv": [".csv"],
-    # later:
-    # "xlsx": [".xlsx"],
+    "docx": [".docx"]
 }
 
 SOURCE_EXTRACTORS = {
     "pdf": lambda p: extract_sections_from_pdf(p),
     "docx": lambda p: extract_sections_from_docx(p),
-    "csv": lambda p: extract_sections_from_csv(p),
 }
 
 def find_files_for_source(source: str) -> List[Path]:
@@ -276,33 +276,21 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
 
         elif kind == "tbl":
             flush_list_into_blocks()
-            tbl: Table = obj
-            table_ordinal += 1
-            tid = stable_table_id(doc_id=doc_id, section_path=current_section_path, table_ordinal=table_ordinal, source_type="docx", )
-            raw_text = table_to_markdown(tbl)
-            blocks.append({"type": "table", "table_id": tid, "raw_text": raw_text, "caption": None,
-                "page": -1
-                })
+            continue
 
     flush_section()
     return sections
-
-
 
 def extract_sections_from_pdf(pdf_path: Path) -> List[SectionRecord]:
     norm_doc = normalize_pdf(str(pdf_path))
     return normalized_doc_to_records(norm_doc, source_path=str(pdf_path))
 
-def extract_sections_from_csv(csv_path: Path) -> List[SectionRecord]:
-    norm_doc = normalize_csv(str(csv_path))   # sets tbl.page = -1
-    return normalized_doc_to_records(norm_doc, source_path=str(csv_path))
-
-
 def main() -> None:
     args = parse_args()
-
     out_path = default_out_for(args.source)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    table_out_path.parent.mkdir(parents=True, exist_ok=True)
+    row_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Choose inputs
     if args.input:
@@ -319,15 +307,34 @@ def main() -> None:
     extractor = SOURCE_EXTRACTORS[args.source]
 
     total_blocks = 0
-    with open(out_path, "w", encoding="utf-8") as f:
+    total_table_facts = 0
+    total_rows = 0
+    with open(out_path, "w", encoding="utf-8") as doc_f, \
+        open(table_out_path, "w", encoding="utf-8") as table_f, \
+        open(row_out_path, "w", encoding="utf-8") as row_f:
         for path in files:
             blocks = extractor(path)
+            #Table detection
+            raw_tables = extract_tables_for_source(path, args.source)
+            table_outputs = normalize_extracted_tables(raw_tables=raw_tables, path=path, source_type=args.source)
+            row_outputs = normalize_all_table_rows(table_outputs)
+
             for b in blocks:
-                f.write(json.dumps(asdict(b), ensure_ascii=False) + "\n")
+                doc_f.write(json.dumps(asdict(b), ensure_ascii=False) + "\n")
+            # NEW: write table summary chunks into same doc index
+            for tb in table_outputs:
+                table_f.write(json.dumps(tb, ensure_ascii=False) + "\n")
+            
+            for row in row_outputs:
+                row_f.write(json.dumps(row, ensure_ascii=False) + "\n")
             total_blocks += len(blocks)
+            total_table_facts += len(table_outputs)
+            total_rows += len(row_outputs)
 
     print(f"[ingest_documents] Source={args.source} Files={len(files)}")
     print(f"[ingest_documents] Wrote {total_blocks} sections → {out_path}")
+    print(f"[ingest_documents] Wrote {total_table_facts} table facts → {table_out_path}")
+    print(f"[ingest_documents] Wrote {total_rows} table facts → {row_out_path}")
 
 if __name__ == "__main__":
     main()
