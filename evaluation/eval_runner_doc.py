@@ -765,6 +765,7 @@ def main():
         #         top_k_retrieve=args.top_k_retrieve, # pool
         #         code_map=code_map,
         #     )
+        ## Not mixing categories for EVALUATION
         ######################################
         if t.get("category") == "policy_lookup":
             retrieved = retrieve_policy_lookup(

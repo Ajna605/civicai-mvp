@@ -5,6 +5,21 @@ import re
 from typing import Any, Dict, List, Optional
 
 CODE_RE = re.compile(r"\b([A-Z]{2,8}-\d+(?:\.\d+)*)\b")
+STOP_WORDS = {
+    "what", "does", "the", "is", "are", "about", "regarding", "tell", "me",
+    "give", "details", "information", "define", "in", "of", "for", "to",
+    "and", "a", "an", "on", "with", "regarding", "about"
+}
+
+WORD_RE = re.compile(r"[a-z0-9]+")
+
+def tokenize_keywords(text: str) -> List[str]:
+    toks = WORD_RE.findall((text or "").lower())
+    return [t for t in toks if t not in STOP_WORDS and len(t) > 2]
+
+def tokenize_keywords(text: str) -> List[str]:
+    toks = WORD_RE.findall((text or "").lower())
+    return [t for t in toks if t not in STOP_WORDS and len(t) > 2]
 
 def norm_code(c: str) -> str:
     return c.rstrip(".").strip()
@@ -52,6 +67,42 @@ class NodeWithScoreShim:
         self.node = node
         self.score = score
 
+def get_node_text(node_like: Any) -> str:
+    node = getattr(node_like, "node", node_like)
+
+    md = getattr(node, "metadata", None) or {}
+    title = (md.get("title") or "").strip()
+
+    txt = ""
+    if hasattr(node, "get_text"):
+        txt = node.get_text() or ""
+    elif hasattr(node, "text"):
+        txt = node.text or ""
+
+    return f"{title} {txt}".strip()
+
+## more weight to rarer/longer terms by preferring longer keywords
+def policy_keyword_bonus(query: str, node_like: Any) -> float:
+    text = get_node_text(node_like)
+    query_keywords = set(tokenize_keywords(query))
+    chunk_keywords = set(tokenize_keywords(text))
+
+    if not query_keywords or not chunk_keywords:
+        return 0.0
+
+    overlap = query_keywords & chunk_keywords
+    if not overlap:
+        return 0.0
+
+    score = 0.0
+    score += 2.0 * len(overlap)
+    score += len(overlap) / max(1.0, len(query_keywords))
+    score += 0.25 * sum(len(tok) for tok in overlap)
+
+    return score
+
+    return score
+
 def retrieve_policy_lookup(
     index: Any,
     query: str,
@@ -79,5 +130,8 @@ def retrieve_policy_lookup(
 
             inj = nid(injected)
             nodes = [injected] + [r for r in nodes if nid(r) != inj]
+    # rerank retrieved nodes for partial-code / keyword cases
+    nodes = sorted(nodes, key=lambda r: getattr(r, "score", 0.0) + policy_keyword_bonus(query, r),
+        reverse=True)
 
     return nodes[:k_eval]
