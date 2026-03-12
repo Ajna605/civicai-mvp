@@ -20,3 +20,8 @@ python -m rag.build_index
 ## Run RAG
 python ./main.py
 
+
+## Identifier-based queries (policy/objective codes) are handled deterministically at retrieval time, not via embeddings.”
+
+
+## Types of questions

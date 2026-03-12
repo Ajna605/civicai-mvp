@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
@@ -418,13 +417,6 @@ def extract_table_candidates_from_page(page_text: str, page_num: int, min_lines:
 
 # -----------------------------------------------------------------------
 
-def sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
 
 def clean_text_basic(text: str) -> str:
     """
@@ -713,12 +705,7 @@ def extract_pdf_pages(pdf_path: str) -> List[PageText]:
     return pages
 
 
-def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+
 
 
 

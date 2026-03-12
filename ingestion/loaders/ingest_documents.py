@@ -1,13 +1,14 @@
 # ingestion/load_docs.py
-from __future__ import annotations
 import argparse
 import json
 import re
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from dataclasses import asdict
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Set
 from pathlib import Path
 from ingestion.normalize.normalize_pdf import normalize_pdf
+from ingestion.schema.document_schema import NormalizedDoc, SectionRecord
+from ingestion.loaders.document_tables import extract_tables_for_source
+from ingestion.normalize.process_tables import normalize_extracted_tables, normalize_all_table_rows
 
 from docx import Document
 from docx.oxml.table import CT_Tbl
@@ -24,13 +25,49 @@ RAW_DIR = Path("data/raw")
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--source", choices=["pdf", "docx"], required=True)
-    p.add_argument("--input", required=True, help="Path to the document")
-    p.add_argument("--out-blocks", default=None, help="blocks.jsonl output path")
+    p.add_argument("--source", choices=["pdf", "docx", "csv"], required=True)
+    p.add_argument("--input", help="Path to the document", required= False)
+    p.add_argument("--out-blocks", default=None, help="sections.jsonl output path")
     return p.parse_args()
 
 def default_out_for(source: str) -> Path:
-    return NORMALIZED_DIR / source / "blocks.jsonl"
+    return NORMALIZED_DIR / source / "sections.jsonl"
+
+
+
+
+# ----------------------------
+# File type functions
+# ----------------------------
+
+SOURCE_EXTENSIONS = {
+    "pdf": [".pdf"],
+    "docx": [".docx"]
+}
+
+SOURCE_EXTRACTORS = {
+    "pdf": lambda p: extract_sections_from_pdf(p),
+    "docx": lambda p: extract_sections_from_docx(p),
+}
+
+def find_files_for_source(source: str) -> List[Path]:
+    if not RAW_DIR.exists():
+        raise FileNotFoundError(f"Expected raw data folder at: {RAW_DIR}")
+
+    exts = SOURCE_EXTENSIONS.get(source)
+    if not exts:
+        raise ValueError(f"Unknown source type: {source}")
+
+    files = []
+    for ext in exts:
+        files.extend(RAW_DIR.rglob(f"*{ext}"))
+
+    return sorted(files)
+
+def _validate_input_matches_source(source: str, path: Path) -> None:
+    allowed = SOURCE_EXTENSIONS[source]
+    if path.suffix.lower() not in allowed:
+        raise ValueError(f"--source {source} requires {', '.join(allowed)} input, got: {path}")
 
 # ----------------------------
 # Text cleanup
@@ -86,76 +123,79 @@ def get_heading_level(p: Paragraph) -> Optional[int]:
     return int(m.group(1)) if m else 1
 
 
-# ----------------------------
-# Tables -> structured JSON
-# ----------------------------
-def table_to_struct(tbl: Table) -> Dict[str, Any]:
-    """
-    Returns:
-      {
-        "header": [..],
-        "rows": [[..], [..], ...],
-        "n_rows": int,
-        "n_cols": int
-      }
-    """
-    rows: List[List[str]] = []
-    for row in tbl.rows:
-        cells = [clean_text(cell.text) for cell in row.cells]
-        rows.append(cells)
+def slugify(text: str, max_len: int = 40) -> str:
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = text.strip("_")
+    return text[:max_len]
 
-    # drop empty rows
-    rows = [r for r in rows if any(c.strip() for c in r)]
-    if not rows:
-        return {"header": [], "rows": [], "n_rows": 0, "n_cols": 0}
-
-    n_cols = max(len(r) for r in rows)
-    rows = [r + [""] * (n_cols - len(r)) for r in rows]
-
-    first = rows[0]
-    headerish = all(c.strip() for c in first) and sum(len(c) for c in first) <= 240
-    if headerish:
-        header = first
-        body = rows[1:]
-    else:
-        header = [f"col_{i+1}" for i in range(n_cols)]
-        body = rows
-
-    return {
-        "header": header,
-        "rows": body,
-        "n_rows": len(body),
-        "n_cols": n_cols,
-    }
+## Create a deterministic table_id across formats.
+def stable_table_id(
+    *,
+    doc_id: str,
+    section_path: List[str],
+    table_ordinal: int,
+    source_type: str,
+) -> str:
+    section_name = section_path[-1] if section_path else "root"
+    slug = slugify(section_name)
+    return f"{doc_id}::{source_type}::{slug}::tbl::{table_ordinal}"
 
 
 # ----------------------------
-# Output schema
+# Extraction (CONDENSED sections w/ sections)
 # ----------------------------
-@dataclass
-class SectionRecord:
-    doc_id: str
-    source_path: str
-    section_index: int
-
-    path: List[str]
-    path_text: str
-    title: str
-    heading_level: Optional[int]
-
-    # Instead of one big string, store structured blocks
-    blocks: List[Dict[str, Any]]  # each: {"type": "...", ...}
 
 
-def find_docx_files() -> List[Path]:
-    if not RAW_DIR.exists():
-        raise FileNotFoundError(f"Expected raw folder at: {RAW_DIR}")
-    return sorted(RAW_DIR.rglob("*.docx"))
+
+def normalized_doc_to_records(norm_doc: NormalizedDoc, source_path: str) -> List[SectionRecord]:
+    records: List[SectionRecord] = []
+    seen_table_ids: set[str] = set()
+
+    for i, sec in enumerate(norm_doc.sections):
+        blocks: List[Dict[str, Any]] = []
+
+        # Text block
+        if sec.text:
+            blocks.append({
+                "type": "text",
+                "text": sec.text,
+                "page_start": sec.page_start,
+                "page_end": sec.page_end,
+                "section_id": sec.section_id,
+            })
+
+        # Table blocks
+        for tbl in sec.tables or []:
+            if tbl.table_id in seen_table_ids:
+                continue
+            seen_table_ids.add(tbl.table_id)
+
+            blocks.append({
+                "type": "table",
+                "table_id": tbl.table_id,
+                "caption": tbl.caption,
+                "raw_text": tbl.raw_text,
+                "page": tbl.page,  # -1 for csv/xlsx, real page for pdf
+            })
+
+        path = sec.heading_path or []
+        records.append(
+            SectionRecord(
+                doc_id=norm_doc.doc_id,
+                source_path=source_path,
+                section_index=i,
+                path=path,
+                path_text=" > ".join(path),
+                title=path[-1] if path else "",
+                heading_level=len(path) if path else None,
+                blocks=blocks,
+            )
+        )
+
+    return records
 
 
-# ----------------------------
-# Extraction (CONDENSED sections w/ blocks)
-# ----------------------------
 def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
     doc = Document(str(docx_path))
     doc_id = docx_path.stem
@@ -235,148 +275,68 @@ def extract_sections_from_docx(docx_path: Path) -> List[SectionRecord]:
 
         elif kind == "tbl":
             flush_list_into_blocks()
-            tbl: Table = obj
-            struct = table_to_struct(tbl)
-            if struct["n_rows"] == 0 and struct["n_cols"] == 0:
-                continue
-            blocks.append({"type": "table", "table": struct})
+            continue
 
     flush_section()
     return sections
 
-
-
 def extract_sections_from_pdf(pdf_path: Path) -> List[SectionRecord]:
-    """
-    Adapter: PDF → NormalizedDoc → blocks
-    """
-    norm_doc = normalize_pdf(str(pdf_path))  # if normalize_pdf expects str; otherwise keep as pdf_path
-
-    blocks: List[SectionRecord] = []
-    block_index = 0
-
-    seen_table_ids = set()
-
-    for sec in norm_doc.sections:
-        # 1) Emit the SECTION block
-        blocks.append(
-            SectionRecord(
-                doc_id=norm_doc.doc_id,
-                source_path=str(pdf_path),
-                block_type="section",
-                block_index=block_index,
-                section_path=sec.heading_path,
-                text=sec.text or "",
-                extra={
-                    "page_start": sec.page_start,
-                    "page_end": sec.page_end,
-                    "section_id": getattr(sec, "section_id", None),
-                },
-            )
-        )
-        block_index += 1
-
-        # 2) Emit TABLE blocks under that section (dedup by table_id)
-        for tbl in getattr(sec, "tables", []) or []:
-            if tbl.table_id in seen_table_ids:
-                continue
-            seen_table_ids.add(tbl.table_id)
-
-            blocks.append(
-                SectionRecord(
-                    doc_id=norm_doc.doc_id,
-                    source_path=str(pdf_path),
-                    block_type="table",
-                    block_index=block_index,
-                    section_path=sec.heading_path,  # inherit section path
-                    text=tbl.raw_text or "",
-                    extra={
-                        "caption": tbl.caption,
-                        "raw_text": tbl.raw_text,
-                        "page": tbl.page,
-                        "table_id": tbl.table_id,
-                    },
-                )
-            )
-            block_index += 1
-
-    return blocks
-
-
-    # Tables
-    for tbl in norm_doc.tables:
-        blocks.append(
-            Block(
-                doc_id=norm_doc.doc_id,
-                source_path=str(pdf_path),
-                block_type="table",
-                block_index=block_index,
-                section_path=tbl.section_path if hasattr(tbl, "section_path") else [],
-                text=tbl.raw_text,
-                extra={
-                    "caption": tbl.caption,
-                    "raw_text": tbl.raw_text,
-                    "page": tbl.page,
-                    "table_id": tbl.table_id,
-                },
-            )
-        )
-        block_index += 1
-
-    return blocks
-
-
-
-def find_docx_files() -> List[Path]:
-    if not RAW_DIR.exists():
-        raise FileNotFoundError(f"Expected raw data folder at: {RAW_DIR}")
-    return sorted(RAW_DIR.rglob("*.docx"))
-
-def find_pdf_files() -> List[Path]:
-    if not RAW_DIR.exists():
-        raise FileNotFoundError(f"Expected raw data folder at: {RAW_DIR}")
-    return sorted(RAW_DIR.rglob("*.pdf"))
-
+    norm_doc = normalize_pdf(str(pdf_path))
+    return normalized_doc_to_records(norm_doc, source_path=str(pdf_path))
 
 def main() -> None:
     args = parse_args()
-
     out_path = default_out_for(args.source)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    ## Paths
+    table_out_path = NORMALIZED_DIR /args.source / "doc_tables" / "raw_tables.jsonl"
+    row_out_path = NORMALIZED_DIR / args.source /"doc_tables" / "table_rows.jsonl"
+    table_out_path.parent.mkdir(parents=True, exist_ok=True)
+    row_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Choose inputs
     if args.input:
         files = [Path(args.input)]
-        # Optional: validate extension matches source
-        if args.source == "docx" and files[0].suffix.lower() != ".docx":
-            raise ValueError(f"--source docx requires a .docx input, got: {files[0]}")
-        if args.source == "pdf" and files[0].suffix.lower() != ".pdf":
-            raise ValueError(f"--source pdf requires a .pdf input, got: {files[0]}")
+        _validate_input_matches_source(args.source, files[0])
     else:
-        if args.source == "docx":
-            files = find_docx_files()
-        else:
-            files = find_pdf_files()
+        files = find_files_for_source(args.source)
 
     if not files:
         raise FileNotFoundError(
             f"No {args.source.upper()} files found (input={args.input!r})."
         )
 
+    extractor = SOURCE_EXTRACTORS[args.source]
+
     total_blocks = 0
-    with open(out_path, "w", encoding="utf-8") as f:
+    total_table_facts = 0
+    total_rows = 0
+    with open(out_path, "w", encoding="utf-8") as doc_f, \
+        open(table_out_path, "w", encoding="utf-8") as table_f, \
+        open(row_out_path, "w", encoding="utf-8") as row_f:
         for path in files:
-            if args.source == "docx":
-                blocks = extract_sections_from_docx(path)
-            else:
-                blocks = extract_sections_from_pdf(path)
+            blocks = extractor(path)
+            #Table detection
+            raw_tables = extract_tables_for_source(path, args.source)
+            table_outputs = normalize_extracted_tables(raw_tables=raw_tables, path=path, source_type=args.source)
+            row_outputs = normalize_all_table_rows(table_outputs)
 
             for b in blocks:
-                f.write(json.dumps(asdict(b), ensure_ascii=False) + "\n")
+                doc_f.write(json.dumps(asdict(b), ensure_ascii=False) + "\n")
+            # NEW: write table summary chunks into same doc index
+            for tb in table_outputs:
+                table_f.write(json.dumps(tb, ensure_ascii=False) + "\n")
+            
+            for row in row_outputs:
+                row_f.write(json.dumps(row, ensure_ascii=False) + "\n")
             total_blocks += len(blocks)
+            total_table_facts += len(table_outputs)
+            total_rows += len(row_outputs)
 
     print(f"[ingest_documents] Source={args.source} Files={len(files)}")
-    print(f"[ingest_documents] Wrote {total_blocks} blocks → {out_path}")
+    print(f"[ingest_documents] Wrote {total_blocks} sections → {out_path}")
+    print(f"[ingest_documents] Wrote {total_table_facts} table facts → {table_out_path}")
+    print(f"[ingest_documents] Wrote {total_rows} table facts → {row_out_path}")
 
 if __name__ == "__main__":
     main()

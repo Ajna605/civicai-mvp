@@ -1,7 +1,8 @@
 
 import os
 from typing import List, Tuple, Optional, Dict
-from ingestion.loaders.pdf_loader import pages_to_sections, extract_tables_from_page_layout, extract_pdf_pages, _sha256_file
+from ingestion.loaders.pdf_loader import pages_to_sections, extract_tables_from_page_layout, extract_pdf_pages
+from utils.hash_utils import _sha256_file
 from datetime import datetime
 from ingestion.schema.document_schema import NormalizedDoc, SourceInfo, Section, Table
 import fitz  # PyMuPDF

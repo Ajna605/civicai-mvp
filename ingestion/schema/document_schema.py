@@ -12,8 +12,6 @@ class Table:
     raw_text: Optional[str] = None   # NEW: raw extracted table-ish block
     rows: Optional[List[Dict[str, Any]]] = None  # future structured extraction
 
-
-
 @dataclass
 class Section:
     section_id: str
@@ -22,6 +20,20 @@ class Section:
     page_end: int
     text: str
     tables: List[Table]
+
+@dataclass
+class SectionRecord:
+    doc_id: str
+    source_path: str
+    section_index: int
+
+    path: List[str]
+    path_text: str
+    title: str
+    heading_level: Optional[int]
+
+    # Instead of one big string, store structured blocks
+    blocks: List[Dict[str, Any]]  # each: {"type": "...", ...}
 
 
 @dataclass
