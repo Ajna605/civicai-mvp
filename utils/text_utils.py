@@ -2,7 +2,6 @@ import re
 from typing import List, Dict, Any
 import json
 
-
 def clean_text(s: str) -> str:
     s = s.replace("\u00a0", " ")
     s = s.replace("\r\n", "\n")

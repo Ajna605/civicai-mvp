@@ -61,17 +61,33 @@ def get_retrieved_nodes(index: Any, question: str, top_k: int = 10) -> List[Any]
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
+STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by",
+    "define", "did", "do", "does",
+    "for", "find", "from",
+    "give",
+    "how",
+    "in", "is", "it",
+    "me",
+    "of", "on", "or",
+    "say", "show",
+    "tell", "that", "the", "this", "to",
+    "what", "when", "where", "which", "who", "with",
+    "about",
+}
+
 
 def norm_text(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
 def tokenize(s: str) -> List[str]:
-    return _WORD_RE.findall((s or "").lower())
+    toks = _WORD_RE.findall((s or "").lower())
+    return [t for t in toks if t not in STOP_WORDS and len(t) > 1]
 
 
 def token_set(s: str) -> set[str]:
-    return {t for t in tokenize(s) if len(t) > 1}
+    return set(tokenize(s))
 
 
 def extract_query_phrases(question: str) -> List[str]:
@@ -80,7 +96,7 @@ def extract_query_phrases(question: str) -> List[str]:
         return []
 
     q = re.sub(
-        r"^(what|which|where|when|who|how|is|are|does|do|did|show|find|tell me|give me)\b",
+        r"^(what|which|where|when|who|how|is|are|does|do|did|show|find|tell me|give me|define)\b",
         "",
         q,
     ).strip()
@@ -90,14 +106,13 @@ def extract_query_phrases(question: str) -> List[str]:
     if len(q.split()) >= 2:
         phrases.append(q)
 
-    toks = q.split()
+    toks = [tok for tok in q.split() if tok not in STOP_WORDS]
     for n in (4, 3, 2):
         if len(toks) >= n:
             for i in range(0, len(toks) - n + 1):
                 phr = " ".join(toks[i:i+n])
-                if phr in {"what is the", "what is in the"}:
-                    continue
-                phrases.append(phr)
+                if len(phr.split()) >= 2:
+                    phrases.append(phr)
 
     seen = set()
     out = []
@@ -257,33 +272,51 @@ def retrieve_table_rows_for_question(
 
     return unique_hits
 
-
 def build_scoring_text(node_like: Any) -> str:
+    """
+    Build a compact scoring text.
+
+    - section_text: use the actual chunk text
+    - table_summary: use summary text + caption + headers
+    - table_row: use only row-focused fields, not full search_text
+    """
     txt = safe_node_text(node_like)
     md = safe_node_meta(node_like)
+    bt = md.get("block_type")
 
-    parts = [txt]
+    parts: List[str] = []
 
-    cap = md.get("caption")
-    if isinstance(cap, str) and cap:
-        parts.append(cap)
+    if bt == "section_text":
+        parts.append(txt)
 
-    sp = md.get("section_path")
-    if isinstance(sp, list):
-        parts.append(" > ".join(str(x) for x in sp))
+    elif bt == "table_summary":
+        parts.append(txt)
 
-    headers = md.get("header_terms")
-    if isinstance(headers, list):
-        parts.append(" ".join(str(x) for x in headers))
+        cap = md.get("caption")
+        if isinstance(cap, str) and cap:
+            parts.append(cap)
 
-    row_label = md.get("row_label")
-    if isinstance(row_label, str) and row_label:
-        parts.append(row_label)
+        headers = md.get("header_terms")
+        if isinstance(headers, list) and headers:
+            parts.append(" ".join(str(x) for x in headers if x))
 
-    row_values = md.get("row_values")
-    if isinstance(row_values, dict):
-        for k, v in row_values.items():
-            parts.append(f"{k} {v}")
+    elif bt == "table_row":
+        cap = md.get("caption")
+        if isinstance(cap, str) and cap:
+            parts.append(cap)
+
+        row_label = md.get("row_label")
+        if isinstance(row_label, str) and row_label:
+            parts.append(row_label)
+
+        row_values = md.get("row_values")
+        if isinstance(row_values, dict) and row_values:
+            for k, v in row_values.items():
+                if v:
+                    parts.append(f"{k} {v}")
+
+    else:
+        parts.append(txt)
 
     return " ".join(p for p in parts if p).strip()
 
@@ -297,42 +330,35 @@ def deterministic_rerank_score(
     locked_table_ids = list(locked_table_ids or [])
     locked_set = set(locked_table_ids)
 
-    text = build_scoring_text(node_like)
     md = safe_node_meta(node_like)
     bt = md.get("block_type")
     tid = md.get("table_id")
+
+    text = build_scoring_text(node_like)
 
     score = 0.0
     score += exact_substring_score(question, text)
     score += token_overlap_score(question, text)
     score += numeric_overlap_score(question, text)
 
-    # Stronger structural preference
     if bt == "table_row":
-        score += 12.0
+        score += 8.0
     elif bt == "table_summary":
-        score += 4.0
+        score += 3.0
     elif bt == "section_text":
-        score += 1.0
+        score += 2.0
 
-    # Lock onto the discovered table
     if locked_set:
         if tid in locked_set:
-            score += 8.0
-        elif bt == "table_row":
-            score -= 6.0  # row from wrong table
-        elif bt == "table_summary":
-            score -= 3.0  # summary from wrong table
-
-    if isinstance(md.get("row_values"), dict) and md["row_values"]:
-        score += 2.5
-    if isinstance(md.get("header_terms"), list) and md["header_terms"]:
-        score += 1.0
-    if isinstance(md.get("caption"), str) and md["caption"]:
-        score += 1.0
-
-    if "columns:" in norm_text(text):
-        score += 1.0
+            if bt == "table_row":
+                score += 8.0
+            elif bt == "table_summary":
+                score += 3.0
+        else:
+            if bt == "table_row":
+                score -= 4.0
+            elif bt == "table_summary":
+                score -= 2.0
 
     return score
 
@@ -383,28 +409,30 @@ def select_locked_table_ids(doc_nodes: Sequence[Any]) -> List[str]:
     return [found[0]]
 
 
-def maybe_expand_table_hits(
+def merge_with_table_rows(
     question: str,
     retrieved_nodes: Sequence[Any],
     row_index: Any,
     *,
-    top_k_rows: int = 20,
+    top_k_rows: int = 10,
     final_top_k: Optional[int] = None,
 ) -> List[Any]:
     doc_nodes = list(retrieved_nodes)
 
+    # If no row index exists, just return doc nodes.
+    if row_index is None:
+        return doc_nodes[:final_top_k] if final_top_k is not None else doc_nodes
+
+    # Use any discovered table summaries as a soft constraint / boost,
+    # but do not require them in order to search rows.
     locked_table_ids = select_locked_table_ids(doc_nodes)
     table_captions = extract_retrieved_table_captions(doc_nodes)
-
-    should_expand = bool(locked_table_ids or table_captions)
-    if not should_expand or row_index is None:
-        return doc_nodes[:final_top_k] if final_top_k is not None else doc_nodes
 
     row_nodes = retrieve_table_rows_for_question(
         question,
         row_index,
-        table_ids=locked_table_ids,
-        table_captions=table_captions,
+        table_ids=locked_table_ids,      # optional preference, not required
+        table_captions=table_captions,   # optional query enrichment
         top_k=top_k_rows,
     )
 
@@ -423,12 +451,12 @@ def table_aware_retrieve(
     doc_index: Any,
     row_index: Any = None,
     top_k_docs: int = 20,
-    top_k_rows: int = 20,
+    top_k_rows: int = 10,
     final_top_k: Optional[int] = None,
 ) -> List[Any]:
     doc_nodes = get_retrieved_nodes(doc_index, question, top_k=top_k_docs)
 
-    return maybe_expand_table_hits(
+    return merge_with_table_rows(
         question,
         doc_nodes,
         row_index,
@@ -445,7 +473,7 @@ def debug_node_summary(node_like: Any) -> Dict[str, Any]:
         "table_id": md.get("table_id"),
         "caption": md.get("caption"),
         "row_label": md.get("row_label"),
-        "preview": build_scoring_text(node_like)[:220],
+        "preview": build_scoring_text(node_like) # [:220],
     }
 
 

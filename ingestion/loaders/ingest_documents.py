@@ -34,8 +34,7 @@ def default_out_for(source: str) -> Path:
     return NORMALIZED_DIR / source / "sections.jsonl"
 
 
-table_out_path = NORMALIZED_DIR / "doc_tables" / "raw_tables.jsonl"
-row_out_path = NORMALIZED_DIR / "doc_tables" / "table_rows.jsonl"
+
 
 # ----------------------------
 # File type functions
@@ -289,6 +288,9 @@ def main() -> None:
     args = parse_args()
     out_path = default_out_for(args.source)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    ## Paths
+    table_out_path = NORMALIZED_DIR /args.source / "doc_tables" / "raw_tables.jsonl"
+    row_out_path = NORMALIZED_DIR / args.source /"doc_tables" / "table_rows.jsonl"
     table_out_path.parent.mkdir(parents=True, exist_ok=True)
     row_out_path.parent.mkdir(parents=True, exist_ok=True)
 

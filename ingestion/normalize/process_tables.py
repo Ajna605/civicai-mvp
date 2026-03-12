@@ -55,67 +55,62 @@ def normalize_extracted_tables(raw_tables, path, source_type):
 
 def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
     """
-    Convert one normalized table record into row-level records.
-
-    Expected input fields on table_record:
-      - table_id
-      - source_file
-      - source_type
-      - table_index
-      - section_path
-      - caption
-      - header_terms
-      - rows   # data rows only (header already removed)
+    Convert one normalized table record into lean row-level records.
     """
+
     table_id = table_record.get("table_id")
     source_file = table_record.get("source_file")
     source_type = table_record.get("source_type")
     table_index = table_record.get("table_index", 0)
+
     section_path = table_record.get("section_path", []) or []
     caption = table_record.get("caption")
-    preceding_text = table_record.get("preceding_text")
+
     header_terms = table_record.get("header_terms", []) or []
     rows = table_record.get("rows", []) or []
 
     row_records: list[dict[str, Any]] = []
 
     for row_index, row in enumerate(rows):
-        # pad/truncate row to header length for consistency
         row = list(row)
-        if len(header_terms) > len(row):
-            row = row + [""] * (len(header_terms) - len(row))
-        elif len(header_terms) < len(row):
-            # keep extras by extending headers if needed
-            extra_count = len(row) - len(header_terms)
-            header_terms_extended = header_terms + [f"extra_col_{i+1}" for i in range(extra_count)]
-        else:
-            header_terms_extended = header_terms
 
-        if len(header_terms) == len(row):
-            header_terms_extended = header_terms
+        # align headers with row length
+        if len(header_terms) < len(row):
+            header_terms_extended = header_terms + [
+                f"extra_col_{i+1}" for i in range(len(row) - len(header_terms))
+            ]
+        else:
+            header_terms_extended = header_terms[:]
+
+        if len(header_terms_extended) > len(row):
+            row += [""] * (len(header_terms_extended) - len(row))
 
         row_values = {
-            str(col).strip(): (str(val).strip() if val is not None else "")
+            str(col).strip(): (str(val).strip() if val else "")
             for col, val in zip(header_terms_extended, row)
             if str(col).strip()
         }
 
+        # first column usually acts as row label
         row_label = ""
         if header_terms_extended and row:
             first_header = header_terms_extended[0]
-            row_label = row_values.get(first_header, "") or (str(row[0]).strip() if row else "")
+            row_label = row_values.get(first_header, "") or str(row[0]).strip()
 
+        # lean search text
         search_parts: list[str] = []
+
         if caption:
             search_parts.append(str(caption))
-        if section_path:
-            search_parts.append(" > ".join(section_path))
-        if preceding_text:
-            search_parts.append(str(preceding_text))
+
+        if row_label:
+            search_parts.append(row_label)
 
         for k, v in row_values.items():
-            if v:
+            if v and v != row_label:
                 search_parts.append(f"{k} {v}")
+
+        search_text = " ".join(search_parts).strip()
 
         row_records.append({
             "block_type": "table_row",
@@ -130,7 +125,7 @@ def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
             "caption": caption,
             "header_terms": header_terms_extended,
             "row_values": row_values,
-            "search_text": " ".join(search_parts).strip(),
+            "search_text": search_text,
         })
 
     return row_records

@@ -182,7 +182,7 @@ def main() -> None:
     base_dir = NORMALIZED_BASE / args.source
     sections_file = base_dir / "sections.jsonl"
     chunks_file = base_dir / "rag_chunks.jsonl"
-    tables_file = NORMALIZED_BASE / "doc_tables" / "raw_tables.jsonl"
+    tables_file = NORMALIZED_BASE / args.source / "doc_tables" / "raw_tables.jsonl"
 
 
     if not sections_file.exists():

@@ -27,7 +27,7 @@ import re
 from collections import Counter, defaultdict
 from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup
 from utils.text_utils import normalize, contains_all, contains_any, load_tests
-from rag.retrieval.table_rerank import table_aware_retrieve
+from rag.retrieval.table_rerank import table_aware_retrieve, rerank_table_and_doc_hits, select_locked_table_ids, debug_ranked_nodes
 
 
 # -----------------------------
@@ -354,7 +354,8 @@ def evaluate_one(
     test: Dict[str, Any],
     retrieved_nodes: List[Any],
     k_eval: int,
-    diag_k: int
+    diag_k: int,
+    row_index = None,
 ) -> Dict[str, Any]:
     qid = test.get("id", "")
     question = test.get("question", "")
@@ -428,13 +429,35 @@ def evaluate_one(
     lookup_like = category in ("policy_lookup", "section_lookup", "table_lookup")
 
     if lookup_like and primary_tok:
-        corpus_cnt = corpus_match_count(index, primary_tok)
+        if category == "table_lookup" and row_index is not None:
+            # Count token presence across both corpora
+            corpus_cnt_doc = corpus_match_count(index, primary_tok)
+            corpus_cnt_row = corpus_match_count(row_index, primary_tok)
+            corpus_cnt = corpus_cnt_doc + corpus_cnt_row
 
-        diag_nodes = get_retrieved_nodes(index, question, top_k=diag_k)
+            # Diagnostic retrieval across both indexes
+            diag_doc_nodes = get_retrieved_nodes(index, question, top_k=diag_k)
+            diag_row_nodes = get_retrieved_nodes(row_index, question, top_k=diag_k)
 
-        diag_rels = [is_relevant(safe_node_text(n), category, expected) for n in diag_nodes]
-        hit_at_diag = 1 if any(diag_rels) else 0
-        diag_match_count = sum(1 for x in diag_rels if x)
+            diag_nodes = rerank_table_and_doc_hits(
+                question,
+                diag_doc_nodes,
+                diag_row_nodes,
+                final_top_k=diag_k,
+                locked_table_ids=select_locked_table_ids(diag_doc_nodes),
+            )
+
+            diag_rels = [is_relevant(safe_node_text(n), category, expected) for n in diag_nodes]
+            hit_at_diag = 1 if any(diag_rels) else 0
+            diag_match_count = sum(1 for x in diag_rels if x)
+
+        else:
+            corpus_cnt = corpus_match_count(index, primary_tok)
+
+            diag_nodes = get_retrieved_nodes(index, question, top_k=diag_k)
+            diag_rels = [is_relevant(safe_node_text(n), category, expected) for n in diag_nodes]
+            hit_at_diag = 1 if any(diag_rels) else 0
+            diag_match_count = sum(1 for x in diag_rels if x)
 
         # token_pos should be computed on the FIRST relevant chunk if available, else on diag_node
         if first_relevant_rank is not None:
@@ -707,7 +730,7 @@ def main():
     ap.add_argument("--out_dir", default="eval_outputs")
     ap.add_argument("--fail_on_gate", action="store_true", help="Exit nonzero if acceptance criteria fail")
     ap.add_argument("--format", default="docx", required = True)
-    ap.add_argument("--table_index", default="docx_tables", required = False)
+    ap.add_argument("--table_index", type=bool, default="True", required = False)
 
     args = ap.parse_args()
 
@@ -723,7 +746,7 @@ def main():
     table_index = None # Optional
     if args.table_index:
         try:
-            table_index = get_index(args.table_index)
+            table_index = get_index(f"{args.format}_tables")
         except Exception as e:
             print(f"[eval_runner_doc] Warning: could not load table index '{args.table_index}': {e}")
             table_index = None
@@ -733,29 +756,51 @@ def main():
 
     for t in tests:
         q = t.get("question", "")
+        print(q)
+        # if t.get("category") == "policy_lookup":
+        #     retrieved = retrieve_policy_lookup(
+        #         doc_index,
+        #         q,
+        #         k_eval=args.k_eval,                 # evaluate top k
+        #         top_k_retrieve=args.top_k_retrieve, # pool
+        #         code_map=code_map,
+        #     )
+        ######################################
         if t.get("category") == "policy_lookup":
             retrieved = retrieve_policy_lookup(
                 doc_index,
                 q,
-                k_eval=args.k_eval,                 # evaluate top k
-                top_k_retrieve=args.top_k_retrieve, # pool
+                k_eval=args.k_eval,
+                top_k_retrieve=args.top_k_retrieve,
                 code_map=code_map,
             )
+        elif t.get("category") == "table_lookup" and table_index is not None:
+            retrieved = table_aware_retrieve(
+                question=q,
+                doc_index=doc_index,
+                row_index=table_index,
+                top_k_docs=args.top_k_retrieve,
+                top_k_rows=20,
+                final_top_k=args.top_k_retrieve,
+            )
         else:
-            # plain doc retrieval if no table index exists
-            if table_index is None:
-                retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
-            else:
-                retrieved = table_aware_retrieve(
-                    question=q,
-                    doc_index=doc_index,
-                    row_index=table_index,
-                    top_k_docs=args.top_k_retrieve,
-                    top_k_rows=20,
-                    final_top_k=args.top_k_retrieve,
-                )
+            retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
+        ######################################
+        # else:
+        #     # plain doc retrieval if no table index exists
+        #     if table_index is None:
+        #         retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
+        #     else:
+        #         retrieved = table_aware_retrieve(
+        #             question=q,
+        #             doc_index=doc_index,
+        #             row_index=table_index,
+        #             top_k_docs=args.top_k_retrieve,
+        #             top_k_rows=20,
+        #             final_top_k=args.top_k_retrieve,
+        #         )
 
-        res = evaluate_one(doc_index, t, retrieved, k_eval=args.k_eval, diag_k=args.diag_k)
+        res = evaluate_one(doc_index, t, retrieved, k_eval=args.k_eval, diag_k=args.diag_k, row_index=table_index)
         results.append(res)
 
         # Per-test line
