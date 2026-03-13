@@ -1,7 +1,7 @@
 
 import os
 from typing import List, Tuple, Optional, Dict
-from ingestion.loaders.pdf_loader import pages_to_sections, extract_tables_from_page_layout, extract_pdf_pages
+from ingestion.loaders.pdf_loader import pages_to_sections, extract_pdf_pages
 from utils.hash_utils import _sha256_file
 from datetime import datetime
 from ingestion.schema.document_schema import NormalizedDoc, SourceInfo, Section, Table
@@ -22,17 +22,17 @@ def normalize_pdf(pdf_path: str, doc_id: str | None = None) -> NormalizedDoc:
     try:
         for i in range(doc.page_count):
             page = doc.load_page(i)
-            tcs = extract_tables_from_page_layout(page)
-            for tc in tcs:
-                table_counter += 1
-                t = Table(
-                    table_id=f"t{table_counter:04d}",
-                    page=tc["page"],
-                    caption=tc.get("caption"),
-                    raw_text=tc.get("raw_text"),
-                    rows=None,
-                )
-                page_tables.setdefault(tc["page"], []).append(t)
+            # tcs = extract_tables_from_page_layout(page)
+            # for tc in tcs:
+            #     table_counter += 1
+            #     t = Table(
+            #         table_id=f"t{table_counter:04d}",
+            #         page=tc["page"],
+            #         caption=tc.get("caption"),
+            #         raw_text=tc.get("raw_text"),
+            #         rows=None,
+            #     )
+            #     page_tables.setdefault(tc["page"], []).append(t)
     finally:
         doc.close()
 

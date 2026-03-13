@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any, Iterable
 from collections import Counter
-from typing import Tuple
 from dataclasses import dataclass
-from typing import Optional
+import pdfplumber
 
 
 # ---------- output structure ----------
@@ -54,366 +54,510 @@ def pdf_has_text_layer(pdf_path: str, sample_pages: int = 3) -> bool:
                             return True
     return False
 
-# ---------- geometry helpers ----------
 
-def _median(xs: List[float]) -> float:
-    xs = sorted(xs)
-    n = len(xs)
-    if n == 0:
-        return 0.0
-    mid = n // 2
-    return xs[mid] if n % 2 == 1 else 0.5 * (xs[mid - 1] + xs[mid])
+#-----------------Table Logic -------------------#
+def _extract_table_with_pdfplumber_crop(path, page_number, bbox):
+    # bbox from PyMuPDF is (x0, y0, x1, y1)
+    x0, y0, x1, y1 = bbox
 
-def _cluster_rows(words: List[Tuple[float, float, float, float, str, int, int, int]], y_tol: float = 2.5):
+    with pdfplumber.open(path) as pdf:
+        page = pdf.pages[page_number - 1]
+
+        cropped = page.crop((x0, y0, x1, y1))
+
+        table = cropped.extract_table(
+            table_settings={
+            "vertical_strategy": "lines",
+            "horizontal_strategy": "text",
+            "snap_tolerance": 3,
+            "join_tolerance": 3,
+            "intersection_tolerance": 3,
+            "min_words_horizontal": 1,
+        }
+        )
+        return table
+
+def _extract_page_tables_pymupdf(
+    page: Any,
+    path: Path,
+    page_number: int,
+) -> list[dict]:
+    out: list[dict] = []
+
+    text_blocks = _get_sorted_text_blocks(page)
+    tabs = page.find_tables(vertical_strategy="lines", horizontal_strategy="lines_strict")
+
+    # PyMuPDF docs show tabs.tables and table.extract() for content extraction. :contentReference[oaicite:1]{index=1}
+    for table_idx, tab in enumerate(getattr(tabs, "tables", [])):
+        try:
+            extracted = _extract_table_with_pdfplumber_crop(path=path, page_number=page_number, bbox=bbox)
+        except Exception:
+            continue
+
+        rows = _normalize_matrix(extracted)
+        if not rows:
+            continue
+
+        headers, body = _split_headers_and_rows(rows)
+        print("header", headers)
+        if not headers and not body:
+            continue
+
+        bbox = _normalize_bbox(getattr(tab, "bbox", None))
+        caption = _find_caption_for_bbox(text_blocks, bbox)
+        table_id, table_title = _split_caption(caption)
+
+        text = _flatten_table_text(
+            caption=caption,
+            headers=headers,
+            rows=body,
+        )
+
+        out.append(
+            {
+                "source_type": "pdf",
+                "path": str(path),
+                "doc_id": path.stem,
+                "page": page_number,
+                "table_idx": table_idx,
+                "extractor": "pymupdf",
+                "bbox": bbox,
+                "caption": caption,
+                "table_id": table_id,
+                "table_title": table_title,
+                "headers": headers,
+                "rows": body,
+                "n_rows": len(body),
+                "n_cols": len(headers) if headers else max((len(r) for r in body), default=0),
+                "text": text,
+            }
+        )
+
+    return out
+
+def _extract_page_tables_pdfplumber(
+    path: Path,
+    page_number: int,
+) -> list[dict]:
+    if pdfplumber is None:
+        return []
+
+    out: list[dict] = []
+
+    with pdfplumber.open(path) as pdf:
+        page = pdf.pages[page_number - 1]
+
+        # pdfplumber is useful for detailed PDF table extraction and visual debugging. :contentReference[oaicite:2]{index=2}
+        try:
+            tables = page.find_tables()
+        except Exception:
+            tables = []
+
+        words = page.extract_words() or []
+        text_lines = _pdfplumber_words_to_lines(words)
+
+        for table_idx, table in enumerate(tables):
+            try:
+                extracted = table.extract()
+            except Exception:
+                continue
+
+            rows = _normalize_matrix(extracted)
+            if not rows:
+                continue
+
+            caption_from_row, rows = _pop_caption_row(rows)
+            headers, body = _split_headers_and_rows(rows)
+            # print("HEADER", headers)
+            bbox = _normalize_bbox(getattr(table, "bbox", None))
+            caption = caption_from_row or _find_caption_for_bbox_pdfplumber(text_lines, bbox)
+            table_id, table_title = _split_caption(caption)
+
+            text = _flatten_table_text(
+                caption=caption,
+                headers=headers,
+                rows=body,
+            )
+
+            out.append(
+                {
+                    "source_type": "pdf",
+                    "path": str(path),
+                    "doc_id": path.stem,
+                    "page": page_number,
+                    "table_idx": table_idx,
+                    "extractor": "pdfplumber",
+                    "bbox": bbox,
+                    "caption": caption,
+                    "table_id": table_id,
+                    "table_title": table_title,
+                    "headers": headers,
+                    "rows": body,
+                    "n_rows": len(body),
+                    "n_cols": len(headers) if headers else max((len(r) for r in body), default=0),
+                    "text": text,
+                }
+            )
+
+    return out
+
+
+def _get_sorted_text_blocks(page: Any) -> list[dict]:
     """
-    Cluster words into rows by y0 coordinate.
-    Returns list of rows; each row is list of word tuples.
+    Returns text blocks sorted top-to-bottom, left-to-right.
+    PyMuPDF page.get_text('blocks') returns tuples like:
+    (x0, y0, x1, y1, text, block_no, block_type)
+    """
+    raw_blocks = page.get_text("blocks") or []
+    blocks: list[dict] = []
+
+    for b in raw_blocks:
+        if len(b) < 5:
+            continue
+        x0, y0, x1, y1, text = b[:5]
+        if not text or not str(text).strip():
+            continue
+        blocks.append(
+            {
+                "bbox": [float(x0), float(y0), float(x1), float(y1)],
+                "text": _clean_text(str(text)),
+            }
+        )
+
+    blocks.sort(key=lambda x: (x["bbox"][1], x["bbox"][0]))
+    return blocks
+
+TABLE_CAPTION_RE = re.compile(
+    r"^\s*((?:Table|TABLE|Tbl\.?)\s+[A-Za-z0-9.\-]+)\s*[:.\-]?\s*(.*)\s*$"
+)
+
+## To extract Heading
+def _is_placeholder(x: str) -> bool:
+    x = (x or "").strip().lower()
+    return not x or x.startswith("column_")
+
+
+def _pop_caption_row(rows: list[list[str]]) -> tuple[str | None, list[list[str]]]:
+    if not rows:
+        return None, rows
+
+    first_row = rows[0]
+
+    # existing "Table X" detection
+    joined = " ".join((c or "").strip() for c in first_row if c).strip()
+    if TABLE_CAPTION_RE.match(joined):
+        return joined, rows[1:]
+
+    # new rule: only one real cell
+    real_cells = [c.strip() for c in first_row if not _is_placeholder(c)]
+
+    if len(real_cells) == 1:
+        return real_cells[0], rows[1:]
+
+    return None, rows
+def _find_caption_for_bbox(
+    text_blocks: list[dict],
+    bbox: list[float] | None,
+    max_above_distance: float = 80.0,
+    max_below_distance: float = 35.0,
+) -> str | None:
+    """
+    Heuristic:
+    1. Prefer nearest caption-like block above the table.
+    2. Then allow a small search below.
+    """
+    if not bbox:
+        return None
+
+    x0, y0, x1, y1 = bbox
+    candidates: list[tuple[float, str]] = []
+
+    for block in text_blocks:
+        bx0, by0, bx1, by1 = block["bbox"]
+        text = block["text"]
+
+        if not TABLE_CAPTION_RE.match(text):
+            continue
+
+        horizontal_overlap = min(x1, bx1) - max(x0, bx0)
+        if horizontal_overlap < 0:
+            continue
+
+        # Above-table preference
+        if by1 <= y0:
+            dist = y0 - by1
+            if dist <= max_above_distance:
+                candidates.append((dist, text))
+        # Small below-table fallback
+        elif by0 >= y1:
+            dist = by0 - y1
+            if dist <= max_below_distance:
+                candidates.append((1000.0 + dist, text))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+def _find_caption_for_bbox_pdfplumber(
+    lines: list[dict],
+    bbox: list[float] | None,
+    max_above_distance: float = 120.0,
+    max_below_distance: float = 40.0,
+) -> str | None:
+    if not bbox:
+        return None
+
+    x0, y0, x1, y1 = bbox
+    candidates: list[tuple[float, str]] = []
+
+    for line in lines:
+        text = (line.get("text") or "").strip()
+        line_bbox = line.get("bbox")
+        if not line_bbox or not TABLE_CAPTION_RE.match(text):
+            continue
+
+        lx0, ly0, lx1, ly1 = line_bbox
+
+        if ly1 <= y0:
+            ydist = y0 - ly1
+            if ydist <= max_above_distance:
+                xdist = min(
+                    abs(lx0 - x0),
+                    abs(lx1 - x1),
+                    abs(((lx0 + lx1) / 2) - ((x0 + x1) / 2)),
+                )
+                score = ydist + 0.15 * xdist
+                candidates.append((score, text))
+
+        elif ly0 >= y1:
+            ydist = ly0 - y1
+            if ydist <= max_below_distance:
+                xdist = min(
+                    abs(lx0 - x0),
+                    abs(lx1 - x1),
+                    abs(((lx0 + lx1) / 2) - ((x0 + x1) / 2)),
+                )
+                score = 1000.0 + ydist + 0.15 * xdist
+                candidates.append((score, text))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
+def _normalize_matrix(matrix: Iterable[Iterable[Any]] | None) -> list[list[str]]:
+    if not matrix:
+        return []
+
+    rows: list[list[str]] = []
+    max_cols = 0
+
+    for row in matrix:
+        if row is None:
+            continue
+        cleaned = [_clean_cell(c) for c in row]
+        if not any(cleaned):
+            continue
+        rows.append(cleaned)
+        max_cols = max(max_cols, len(cleaned))
+
+    if not rows:
+        return []
+
+    # pad rows to consistent width
+    padded: list[list[str]] = []
+    for row in rows:
+        if len(row) < max_cols:
+            row = row + [""] * (max_cols - len(row))
+        padded.append(row)
+
+    # remove repeated fully-empty trailing columns
+    padded = _trim_empty_edge_columns(padded)
+
+    # remove rows that became empty after trimming
+    padded = [r for r in padded if any(cell.strip() for cell in r)]
+    return padded
+
+
+def _split_headers_and_rows(rows: list[list[str]]) -> tuple[list[str], list[list[str]]]:
+    """
+    Assumption:
+    - first non-empty row is header row
+    - rest are body rows
+
+    This matches many DOCX normalization pipelines and keeps the raw stage simple.
+    """
+    if not rows:
+        return [], []
+
+    headers = [_normalize_header_cell(c, idx) for idx, c in enumerate(rows[0])]
+    body = rows[1:] if len(rows) > 1 else []
+
+    # if header row looks empty / useless, downgrade into body
+    non_empty_headers = sum(1 for h in headers if h and not h.startswith("column_"))
+    if non_empty_headers == 0:
+        return [], rows
+
+    # drop repeated header rows from body
+    filtered_body: list[list[str]] = []
+    normalized_header_sig = tuple(h.strip().lower() for h in headers)
+
+    for row in body:
+        row_sig = tuple(c.strip().lower() for c in row)
+        if row_sig == normalized_header_sig:
+            continue
+        filtered_body.append(row)
+
+    return headers, filtered_body
+
+
+def _normalize_header_cell(value: str, idx: int) -> str:
+    value = _clean_text(value)
+    return value if value else f"column_{idx + 1}"
+
+
+def _trim_empty_edge_columns(rows: list[list[str]]) -> list[list[str]]:
+    if not rows:
+        return rows
+
+    n_cols = max(len(r) for r in rows)
+    keep_left = 0
+    keep_right = n_cols - 1
+
+    # trim empty leading columns
+    while keep_left < n_cols:
+        if any((r[keep_left].strip() if keep_left < len(r) else "") for r in rows):
+            break
+        keep_left += 1
+
+    # trim empty trailing columns
+    while keep_right >= keep_left:
+        if any((r[keep_right].strip() if keep_right < len(r) else "") for r in rows):
+            break
+        keep_right -= 1
+
+    return [r[keep_left : keep_right + 1] for r in rows]
+
+
+def _split_caption(caption: str | None) -> tuple[str | None, str | None]:
+    if not caption:
+        return None, None
+
+    m = TABLE_CAPTION_RE.match(caption)
+    if not m:
+        return None, caption.strip()
+
+    table_id = m.group(1).strip()
+    title = (m.group(2) or "").strip()
+    return table_id, title or None
+
+
+def _flatten_table_text(
+    caption: str | None,
+    headers: list[str],
+    rows: list[list[str]],
+) -> str:
+    parts: list[str] = []
+
+    if caption:
+        parts.append(caption)
+
+    if headers:
+        parts.append(" | ".join(headers))
+
+    for row in rows:
+        parts.append(" | ".join(_clean_text(c) for c in row))
+
+    return "\n".join(p for p in parts if p.strip())
+
+
+def _clean_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    return _clean_text(str(value))
+
+
+def _clean_text(text: str) -> str:
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\s*\n\s*", " ", text)
+    return text.strip()
+
+
+def _normalize_bbox(bbox: Any) -> list[float] | None:
+    if not bbox:
+        return None
+    try:
+        x0, y0, x1, y1 = bbox
+        return [float(x0), float(y0), float(x1), float(y1)]
+    except Exception:
+        return None
+
+
+def _table_fingerprint(table: dict) -> tuple:
+    """
+    Used for dedup across extractors.
+    """
+    headers = tuple(table.get("headers") or [])
+    rows = table.get("rows") or []
+    row_sample = tuple(tuple(r) for r in rows[:3])
+    return (
+        table.get("page"),
+        headers,
+        row_sample,
+        table.get("caption"),
+    )
+
+
+def _pdfplumber_words_to_lines(words: list[dict]) -> list[dict]:
+    """
+    Reconstruct simple text lines from pdfplumber words for caption matching.
     """
     if not words:
         return []
 
-    # sort by y then x
-    words_sorted = sorted(words, key=lambda w: (w[1], w[0]))
-    rows: List[List[Tuple[float, float, float, float, str, int, int, int]]] = []
+    # group by approximate y position
+    grouped: list[list[dict]] = []
+    tolerance = 3.0
+
+    words_sorted = sorted(words, key=lambda w: (float(w["top"]), float(w["x0"])))
 
     for w in words_sorted:
-        x0, y0, x1, y1, text, *_ = w
-        placed = False
-        for row in rows:
-            # compare to row baseline (median y0)
-            y0s = [rw[1] for rw in row]
-            base = _median(y0s)
-            if abs(y0 - base) <= y_tol:
-                row.append(w)
-                placed = True
-                break
-        if not placed:
-            rows.append([w])
-
-    # sort words within each row by x
-    for row in rows:
-        row.sort(key=lambda w: w[0])
-    return rows
-
-def _row_to_cells(row_words, x_gap: float = 10.0) -> List[str]:
-    """
-    Convert row words into "cells" by splitting on large x gaps.
-    """
-    if not row_words:
-        return []
-    cells: List[List[str]] = []
-    current: List[str] = [row_words[0][4]]
-    last_x1 = row_words[0][2]
-
-    for w in row_words[1:]:
-        x0, y0, x1, y1, text, *_ = w
-        if (x0 - last_x1) >= x_gap:
-            cells.append(current)
-            current = [text]
-        else:
-            current.append(text)
-        last_x1 = x1
-
-    cells.append(current)
-    # join words within each cell
-    return [" ".join(c).strip() for c in cells if " ".join(c).strip()]
-
-
-def _is_table_row(cells: List[str]) -> bool:
-    """
-    Table rows typically have multiple cells and are not full sentences.
-    """
-    if len(cells) < 2:
-        return False
-    # avoid rows that are just one long paragraph split oddly
-    long_cells = sum(1 for c in cells if len(c) > 80)
-    if long_cells >= 2:
-        return False
-    return True
-
-def _find_consecutive_runs(flags: List[bool], min_len: int) -> List[Tuple[int, int]]:
-    """
-    Return list of (start, end_exclusive) runs of True values.
-    """
-    runs = []
-    start = None
-    for i, f in enumerate(flags):
-        if f and start is None:
-            start = i
-        if (not f or i == len(flags) - 1) and start is not None:
-            end = i + 1 if f and i == len(flags) - 1 else i
-            if (end - start) >= min_len:
-                runs.append((start, end))
-            start = None
-    return runs
-
-def _extract_caption_from_lines(lines: List[str], table_start_line: int, lookback: int = 4) -> Optional[str]:
-    """
-    Best-effort caption from nearby text lines.
-    """
-    for j in range(max(0, table_start_line - lookback), table_start_line)[::-1]:
-        s = (lines[j] or "").strip()
-        if not s:
-            continue
-        if "Table" in s or "TABLE" in s:
-            return s
-        # also accept short title-like lines
-        if len(s) <= 80 and not s.endswith("."):
-            return s
-    return None
-
-def _run_quality(a: int, b: int, row_cells_text, row_cells_x) -> bool:
-    run_len = b - a
-    if run_len < 3:
-        return False
-
-    # rows that actually have >=2 cells
-    multi = [i for i in range(a, b) if len(row_cells_text[i]) >= 2]
-    if len(multi) < max(3, int(0.6 * run_len)):
-        return False  # too many single-cell lines → likely prose
-
-    # Column count consistency (mode frequency)
-    col_counts = [len(row_cells_text[i]) for i in multi]
-    mode = max(set(col_counts), key=col_counts.count)
-    mode_frac = col_counts.count(mode) / float(len(col_counts))
-    if mode_frac < 0.6:
-        return False
-
-    # Column x alignment consistency: compare first 2-3 cell starts across rows
-    # (roughly: are columns in the same places?)
-    def quantize(xs, q=8.0):
-        return [int(x / q) for x in xs]
-
-    sigs = []
-    for i in multi:
-        xs = row_cells_x[i][:min(3, len(row_cells_x[i]))]
-        sigs.append(tuple(quantize(xs)))
-
-    sig_mode = max(set(sigs), key=sigs.count)
-    sig_frac = sigs.count(sig_mode) / float(len(sigs))
-    if sig_frac < 0.55:
-        return False
-
-    return True
-
-
-def extract_tables_from_page_layout(page) -> List[dict]:
-    """
-    Layout-aware table extraction using PyMuPDF word positions.
-    Returns list of dicts: {page, caption, raw_text}
-    raw_text is a pipe-separated representation with stable rows.
-    """
-    page_num = page.number + 1
-
-    words = page.get_text("words") or []
-    if not words:
-        return []
-
-    rows = _cluster_rows(words, y_tol=2.5)
-
-    row_cells_x: List[List[float]] = []
-    row_cells_text: List[List[str]] = []
-    for r in rows:
-        cx = _row_to_cells_with_x(r, x_gap=7.0)
-        row_cells_x.append([x for x, _ in cx])
-        row_cells_text.append([t for _, t in cx])
-
-    # Debug summary (optional)
-    ge2 = sum(1 for c in row_cells_text if len(c) >= 2)
-    ge3 = sum(1 for c in row_cells_text if len(c) >= 3)
-    if ge2 >= 10:
-        print(f"[debug page {page_num}] total={len(row_cells_text)} ge2={ge2} ge3={ge3}")
-
-    # Table-ish rows: >=2 cells
-    flags = [len(cells) >= 2 for cells in row_cells_text]
-    runs = _find_consecutive_runs(flags, min_len=3)
-
-    page_text_lines = (page.get_text('text') or "").splitlines()
-
-    tables: List[dict] = []
-    for (a, b) in runs:
-        if not _run_is_table_like(row_cells_x, row_cells_text, a, b):
+        top = float(w["top"])
+        if not grouped:
+            grouped.append([w])
             continue
 
-        caption = _extract_caption_from_lines(page_text_lines, table_start_line=a, lookback=6)
-
-        # Tightener: require caption unless the run is "long enough"
-        # If no caption, require a longer run AND more columns
-        if caption is None:
-            if (b - a) < 10:
-                continue
-            # also require at least 3 columns in the mode row
-            multi = [i for i in range(a, b) if len(row_cells_text[i]) >= 2]
-            counts = [len(row_cells_text[i]) for i in multi]
-            mode = max(set(counts), key=counts.count)
-            if mode < 3:
-                continue
-
-        max_cols = max(len(row_cells_text[i]) for i in range(a, b))
-        out_lines = []
-        for i in range(a, b):
-            cells = row_cells_text[i]
-            padded = cells + [""] * (max_cols - len(cells))
-            out_lines.append(" | ".join(padded))
-
-        raw_text = "\n".join(out_lines).strip()
-        if raw_text:
-            tables.append({"page": page_num, "caption": caption, "raw_text": raw_text})
-
-    return tables
-
-
-def _row_to_cells_with_x(row_words, x_gap: float = 7.0):
-    """
-    Returns list of (x_start, cell_text) for a row by splitting on x gaps.
-    word tuple: (x0, y0, x1, y1, text, block, line, wordno)
-    """
-    if not row_words:
-        return []
-    row_words = sorted(row_words, key=lambda w: w[0])
-
-    cells = []
-    cur_x0 = row_words[0][0]
-    cur_words = [row_words[0][4]]
-    last_x1 = row_words[0][2]
-
-    for w in row_words[1:]:
-        x0, y0, x1, y1, text, *_ = w
-        if (x0 - last_x1) >= x_gap:
-            cell_text = " ".join(cur_words).strip()
-            if cell_text:
-                cells.append((cur_x0, cell_text))
-            cur_x0 = x0
-            cur_words = [text]
+        prev_top = float(grouped[-1][0]["top"])
+        if abs(top - prev_top) <= tolerance:
+            grouped[-1].append(w)
         else:
-            cur_words.append(text)
-        last_x1 = x1
+            grouped.append([w])
 
-    cell_text = " ".join(cur_words).strip()
-    if cell_text:
-        cells.append((cur_x0, cell_text))
+    lines: list[dict] = []
+    for group in grouped:
+        group = sorted(group, key=lambda w: float(w["x0"]))
+        text = " ".join(str(w["text"]) for w in group).strip()
+        if not text:
+            continue
 
-    return cells
+        x0 = min(float(w["x0"]) for w in group)
+        x1 = max(float(w["x1"]) for w in group)
+        top = min(float(w["top"]) for w in group)
+        bottom = max(float(w["bottom"]) for w in group)
 
+        lines.append(
+            {
+                "bbox": [x0, top, x1, bottom],
+                "text": _clean_text(text),
+            }
+        )
 
-def _run_is_table_like(row_cells_x, row_cells_text, a: int, b: int) -> bool:
-    """
-    Filters out false positives by enforcing:
-    - many multi-cell rows
-    - stable column count
-    - stable column x-start signature
-    """
-    run_len = b - a
-    if run_len < 3:
-        return False
-
-    # consider only rows with >=2 cells (multi-column)
-    multi = [i for i in range(a, b) if len(row_cells_text[i]) >= 2]
-    if len(multi) < max(3, int(0.85 * run_len)):  # must mostly be multi-cell
-        return False
-
-    # column count consistency
-    counts = [len(row_cells_text[i]) for i in multi]
-    mode = max(set(counts), key=counts.count)
-    mode_frac = counts.count(mode) / float(len(counts))
-    if mode_frac < 0.85:
-        return False
-
-    # column x-start signature consistency (first 2-3 cols)
-    def sig(xs, q=8.0, m=3):
-        xs = xs[: min(m, len(xs))]
-        return tuple(int(x / q) for x in xs)
-
-    sigs = [sig(row_cells_x[i]) for i in multi]
-    sig_mode = max(set(sigs), key=sigs.count)
-    sig_frac = sigs.count(sig_mode) / float(len(sigs))
-    if sig_frac < 0.8:
-        return False
-
-    return True
-
-
-# -----------------------------------------------------------------------
-# Legacy text-stream table detection (not used for PDF layout extraction)
-def looks_like_table_line(line: str) -> bool:
-    """
-    Heuristic: table-ish lines often have multiple columns separated by pipes
-    or by 2+ spaces repeated across the line.
-    """
-    s = (line or "").rstrip()
-    if not s:
-        return False
-
-    # Markdown/pipe tables or PDF-to-text with pipes
-    if "|" in s:
-        # ignore lines that are just a single pipe
-        return s.count("|") >= 2
-
-    # Multiple columns separated by 2+ spaces
-    # e.g. "Urban Open Spaces   0 - .25   5 min walk"
-    if re.search(r"\S+\s{2,}\S+", s):
-        return True
-
-    return False
-
-
-def looks_like_table_caption(line: str) -> bool:
-    """
-    Captions often include 'Table' or end with 'Standards', 'Standard', etc.
-    Keep it conservative.
-    """
-    s = (line or "").strip()
-    if not s:
-        return False
-    if len(s) > 120:
-        return False
-
-    if re.search(r"\bTable\b", s, flags=re.I):
-        return True
-    if re.search(r"\b(Standards?|Radius|Service)\b", s, flags=re.I) and not s.endswith("."):
-        return True
-
-    return False
-
-
-def extract_table_candidates_from_page(page_text: str, page_num: int, min_lines: int = 3) -> List[dict]:
-    """
-    Returns a list of candidate tables on a page as dicts:
-      {caption, raw_text, page}
-    We don't parse rows/cols yet; we just find contiguous table-ish blocks.
-    """
-    lines = [ln.rstrip() for ln in (page_text or "").splitlines()]
-    candidates: List[dict] = []
-
-    buf: List[str] = []
-    for i, ln in enumerate(lines):
-        if looks_like_table_line(ln):
-            buf.append(ln)
-        else:
-            if len(buf) >= min_lines:
-                # look backward for a caption within the last ~3 lines
-                caption = None
-                for back in range(1, 4):
-                    j = i - back
-                    if j >= 0 and looks_like_table_caption(lines[j]):
-                        caption = lines[j].strip()
-                        break
-                candidates.append(
-                    {"page": page_num, "caption": caption, "raw_text": "\n".join(buf)}
-                )
-            buf = []
-
-    # flush
-    if len(buf) >= min_lines:
-        caption = None
-        for back in range(1, 4):
-            j = len(lines) - back - len(buf)
-            if 0 <= j < len(lines) and looks_like_table_caption(lines[j]):
-                caption = lines[j].strip()
-                break
-        candidates.append({"page": page_num, "caption": caption, "raw_text": "\n".join(buf)})
-
-    return candidates
+    return lines
 
 # -----------------------------------------------------------------------
 
@@ -561,8 +705,6 @@ def looks_like_heading(line: str) -> bool:
         return True
 
     return False
-
-
 
 
 def pages_to_sections(pages: List[PageText]) -> List[SectionText]:

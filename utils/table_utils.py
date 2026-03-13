@@ -118,3 +118,5 @@ def build_table_summary_chunks(
         })
 
     return chunks
+
+

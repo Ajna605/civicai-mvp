@@ -1,6 +1,66 @@
 from utils.table_utils import is_repeated_title_row
 from typing import Any
 
+def _is_placeholder_header_cell(x: str) -> bool:
+    x = (x or "").strip().lower()
+    return not x or x.startswith("column_")
+
+def _merge_row_continuation(prev_row: list[str], continuation: list[str]) -> list[str]:
+    out = []
+    max_len = max(len(prev_row), len(continuation))
+
+    for i in range(max_len):
+        left = prev_row[i].strip() if i < len(prev_row) and prev_row[i] else ""
+        right = continuation[i].strip() if i < len(continuation) and continuation[i] else ""
+
+        if _is_placeholder_header_cell(right):
+            right = ""
+
+        if left and right:
+            out.append(f"{left} {right}".strip())
+        else:
+            out.append(left or right)
+
+    return out
+
+def _merge_same_caption_tables(tables: list[dict]) -> list[dict]:
+    if not tables:
+        return tables
+
+    merged = [tables[0]]
+
+    for curr in tables[1:]:
+        prev = merged[-1]
+
+        same_caption = (
+            prev.get("caption")
+            and curr.get("caption")
+            and prev.get("caption") == curr.get("caption")
+        )
+
+        if not same_caption:
+            merged.append(curr)
+            continue
+
+        curr_header = curr.get("header_terms") or []
+        curr_rows = curr.get("rows") or []
+
+        # first: if current "header" is really a continuation fragment, merge it
+        if curr_header and prev.get("rows"):
+            prev["rows"][-1] = _merge_row_continuation(prev["rows"][-1], curr_header)
+
+        # then append the actual body rows
+        if curr_rows:
+            prev["rows"].extend(curr_rows)
+
+        prev["n_rows"] = len(prev["rows"])
+        prev["n_cols"] = max(
+            len(prev.get("header_terms") or []),
+            max((len(r) for r in prev["rows"]), default=0),
+        )
+
+    return merged
+
 def normalize_extracted_tables(raw_tables, path, source_type):
     normalized = []
 
@@ -8,7 +68,7 @@ def normalize_extracted_tables(raw_tables, path, source_type):
         rows = tbl.get("rows", []) or []
 
         table_title = tbl.get("caption")
-        header_terms = []
+        header_terms = tbl.get("headers", []) or tbl.get("header_terms", []) or []
         data_rows = rows
 
         if rows and is_repeated_title_row(rows[0]):
@@ -16,11 +76,15 @@ def normalize_extracted_tables(raw_tables, path, source_type):
                 table_title = rows[0][0].strip()
             data_rows = rows[1:]
 
-        if data_rows:
+        # only infer header from first row if extractor did not already provide one
+        if not header_terms and data_rows:
             header_terms = data_rows[0]
             data_rows = data_rows[1:]
-        n_rows = len(rows)
-        n_cols = max((len(r) for r in rows), default=0)
+        n_rows = len(data_rows)
+        n_cols = max(
+            len(header_terms) if header_terms else 0,
+            max((len(r) for r in data_rows), default=0)
+        )
 
         section_path = tbl.get("section_path", []) or []
         preceding_text = (tbl.get("preceding_text") or "").strip() or None
@@ -34,6 +98,8 @@ def normalize_extracted_tables(raw_tables, path, source_type):
             search_parts.append(preceding_text)
         if header_terms:
             search_parts.append(" | ".join(x for x in header_terms if x))
+        for row in data_rows:
+            search_parts.append(" | ".join(x for x in row if x))
 
         normalized.append({
             "table_id": f"{path.stem}__tbl_{tbl.get('table_index', 0)}",
@@ -47,10 +113,10 @@ def normalize_extracted_tables(raw_tables, path, source_type):
             "n_cols": n_cols,
             "header_terms": header_terms,
             "rows": data_rows,
-            "search_text": " ".join(search_parts).strip(),
+            "search_text": "\n".join(search_parts).strip()
         })
 
-    return normalized
+    return _merge_same_caption_tables(normalized)
 
 
 def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
