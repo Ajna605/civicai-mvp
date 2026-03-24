@@ -1,7 +1,6 @@
 import re
 import math
 from typing import Dict, List, Optional, Tuple, Any, Set
-from collections import Counter
 
 NUM_RE = re.compile(r"\b\d{1,3}\b")
 
@@ -126,42 +125,78 @@ def best_direct_measure_match(
         return None
     return best_m, best_score
 
-def direct_measure_first_guard(question: str, meta: dict, threshold: float = 0.55) -> Optional[Dict[str, Any]]:
+
+AGG_HINT = re.compile(
+    r"\b(total|sum|average|avg|mean|count|how many|max|maximum|min|minimum)\b",
+    re.I,
+)
+
+GROUP_HINT = re.compile(
+    r"\b(by|per|for each|across|grouped by|over time)\b",
+    re.I,
+)
+
+CHART_HINT = re.compile(
+    r"\b(chart|plot|graph|visualize|bar chart|line chart|scatter|histogram|trend)\b",
+    re.I,
+)
+
+RANK_HINT = re.compile(
+    r"\b(most|least|highest|lowest|largest|smallest|top|bottom|prominent|common)\b",
+    re.I,
+)
+
+COMPARE_HINT = re.compile(
+    r"\b(compare|comparison|versus|vs\.?|male and female|males and females|both)\b",
+    re.I,
+)
+
+UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\s+(?P<n>\d{1,3})?\b", re.I)
+
+def direct_measure_first_guard(
+    question: str,
+    meta: dict,
+    threshold: float = 0.55,
+) -> Optional[Dict[str, Any]]:
     """
-    Returns the exact measure string from metadata if question strongly implies a direct measure.
-    threshold lower than before because IDF scoring is already conservative.
+    Only force a direct cell_lookup when the question appears to ask for
+    one exact measure value, not an aggregation/comparison/chart/ranking task.
     """
     measures = meta.get("measures", [])
     if not measures:
         return None
 
+    q = question.strip()
+    q_lower = q.lower()
+
+    # Block direct cell-lookup override for questions that are clearly not simple lookups
+    if AGG_HINT.search(q) or GROUP_HINT.search(q) or CHART_HINT.search(q) or RANK_HINT.search(q) or COMPARE_HINT.search(q):
+        return None
+
     df, idf = build_measure_token_stats(measures)
-    hit = best_direct_measure_match(question, measures, df, idf)
+    hit = best_direct_measure_match(q, measures, df, idf)
     if not hit:
         return None
 
     measure, score = hit
-
     if score < threshold:
         return None
-    ## If question is "under X", reject a "A to X" bucket unless A is explicitly mentioned.
-    UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\b", re.I)
-    if UNDER_HINT.search(question):
-        q_nums = extract_numbers(question)
+
+    # Prevent "under X" from incorrectly matching unrelated bucket labels
+    if UNDER_HINT.search(q):
+        q_nums = extract_numbers(q)
         m_nums = extract_numbers(measure)
         if m_nums and q_nums and not m_nums.issubset(q_nums):
             return None
-        
-    ## all return cell_lookup as info is in table
+
     return {
         "force_category": "cell_lookup",
         "force_measure": measure,
         "score": score,
-        "reason": "direct_measure_match"
+        "reason": "direct_measure_match",
     }
 
 
-UNDER_RE = re.compile(r"\b(under|less than|below)\s+(\d{1,3})\b", re.I)
 RANGE_RE = re.compile(r"^\s*(\d{1,3})\s*(?:to|\-)\s*(\d{1,3})\s+year", re.I)
 UNDER_MEASURE_RE = re.compile(r"^\s*under\s+(\d{1,3})\s+year", re.I)
 
@@ -209,11 +244,11 @@ def age_under_measures_in(target: int, measures: List[str]) -> List[str]:
 
 def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
     measures = meta.get("measures", []) or []
-    m = UNDER_RE.search(question)
+    m = UNDER_HINT.search(question)
     if not m:
         return None
 
-    target = int(m.group(2))
+    target = int(m.group("n"))
 
     # Case 1: dataset already has "Under X years" bucket -> allow direct cell lookup
     direct = f"Under {target} years"
@@ -227,7 +262,7 @@ def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
     # Case 2: build measures_in list deterministically -> force aggregation sum
     measures_in = age_under_measures_in(target, measures)
     if not measures_in:
-        return None  # no usable bands found
+        return None
 
     return {
         "force_category": "aggregation",
@@ -237,3 +272,15 @@ def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
     }
 
 
+################### FIND WHICH GUARD RUNS FIRST ###################
+GUARDS = [
+    age_range_sum_guard,
+    direct_measure_first_guard,
+]
+
+def resolve_measure_override(question: str, meta: dict):
+    for guard in GUARDS:
+        override = guard(question, meta)
+        if override:
+            return override
+    return None

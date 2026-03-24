@@ -5,10 +5,10 @@ from llama_index.llms.huggingface import HuggingFaceLLM
 
 @dataclass
 class ParamLLMConfig:
-    #model_name: str = "Qwen/Qwen2.5-7B-Instruct"
-    model_name: str = "Qwen/Qwen2.5-3B-Instruct"  # for faster run
+    model_name: str = "Qwen/Qwen2.5-7B-Instruct"
+    # model_name: str = "Qwen/Qwen2.5-3B-Instruct"  # for faster run
     context_window: int = 8192
-    max_new_tokens: int = 150
+    max_new_tokens: int = 300
 
 def build_param_llm(cfg: Optional[ParamLLMConfig] = None) -> HuggingFaceLLM:
     cfg = cfg or ParamLLMConfig()
@@ -29,5 +29,6 @@ def build_param_llm(cfg: Optional[ParamLLMConfig] = None) -> HuggingFaceLLM:
 
 def generate_json_only(llm: HuggingFaceLLM, prompt: str) -> str:
     resp = llm.complete(prompt)
+    print("response", resp)
     text = getattr(resp, "text", str(resp))
     return text.strip()

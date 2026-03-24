@@ -184,7 +184,6 @@ def main() -> None:
     chunks_file = base_dir / "rag_chunks.jsonl"
     tables_file = NORMALIZED_BASE / args.source / "doc_tables" / "raw_tables.jsonl"
 
-
     if not sections_file.exists():
         raise FileNotFoundError(f"Missing {sections_file}. Run ingest_documents first.")
 

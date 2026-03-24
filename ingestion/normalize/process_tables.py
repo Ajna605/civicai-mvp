@@ -1,5 +1,6 @@
-from utils.table_utils import is_repeated_title_row
+from utils.table_utils import is_repeated_title_row, _single_row_normalization, _align_headers_to_row
 from typing import Any
+import re
 
 def _is_placeholder_header_cell(x: str) -> bool:
     x = (x or "").strip().lower()
@@ -61,10 +62,80 @@ def _merge_same_caption_tables(tables: list[dict]) -> list[dict]:
 
     return merged
 
+TABLE_CAPTION_RE = re.compile(
+    r"^\s*((?:Table|TABLE|Tbl\.?)\s+[A-Za-z0-9.\-]+)\s*[:.\-]?\s*(.*)\s*$"
+)
+# Detect New table within table
+def _row_is_new_table_caption(row: list[str]) -> str | None:
+    real_cells = [c.strip() for c in row if c and c.strip() and not c.strip().lower().startswith("column_")]
+    if len(real_cells) != 1:
+        return None
+
+    text = real_cells[0]
+    if TABLE_CAPTION_RE.match(text):
+        return text
+
+    return None
+
+def _make_split_table_base(tbl: dict, caption: str | None = None, keep_headers: bool = False) -> dict:
+    return {
+        "table_id": tbl.get("table_id"),
+        "source_file": tbl.get("source_file"),
+        "source_type": tbl.get("source_type"),
+        "table_index": tbl.get("table_index"),
+        "section_path": tbl.get("section_path", []) or [],
+        "preceding_text": None,
+        "caption": caption,
+        "rows": [],
+        "headers": (tbl.get("headers", []) or []) if keep_headers else [],
+        "header_terms": (tbl.get("header_terms", []) or []) if keep_headers else [],
+        "page": tbl.get("page"),
+        "bbox": tbl.get("bbox"),
+    }
+
+
+def _split_on_embedded_table_captions(tbl: dict) -> list[dict]:
+    rows = tbl.get("rows", []) or []
+    if not rows:
+        return [tbl]
+
+    out = []
+    current = _make_split_table_base(
+        tbl,
+        caption=tbl.get("caption"),
+        keep_headers=True,   # keep original headers on the first table
+    )
+    current_rows = []
+
+    for row in rows:
+        new_caption = _row_is_new_table_caption(row)
+
+        if new_caption and current_rows:
+            current["rows"] = current_rows
+            out.append(current)
+
+            current = _make_split_table_base(
+                tbl,
+                caption=new_caption,
+                keep_headers=False,   # fresh table starts clean
+            )
+            current_rows = []
+            continue
+
+        current_rows.append(row)
+
+    current["rows"] = current_rows
+    out.append(current)
+    return out
+
+
 def normalize_extracted_tables(raw_tables, path, source_type):
     normalized = []
 
+    expanded_tables = []
     for tbl in raw_tables:
+        expanded_tables.extend(_split_on_embedded_table_captions(tbl))
+    for tbl in expanded_tables:
         rows = tbl.get("rows", []) or []
 
         table_title = tbl.get("caption")
@@ -113,10 +184,13 @@ def normalize_extracted_tables(raw_tables, path, source_type):
             "n_cols": n_cols,
             "header_terms": header_terms,
             "rows": data_rows,
-            "search_text": "\n".join(search_parts).strip()
+            "search_text": "\n".join(search_parts).strip(),
+            "page": tbl.get("page"),
+            "bbox": tbl.get("bbox"),
         })
 
     return _merge_same_caption_tables(normalized)
+
 
 
 def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -127,56 +201,44 @@ def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
     table_id = table_record.get("table_id")
     source_file = table_record.get("source_file")
     source_type = table_record.get("source_type")
-    table_index = table_record.get("table_index", 0)
-
+    table_index = table_record.get("table_index")
     section_path = table_record.get("section_path", []) or []
     caption = table_record.get("caption")
 
+    raw_rows = table_record.get("rows", []) or []
     header_terms = table_record.get("header_terms", []) or []
-    rows = table_record.get("rows", []) or []
+
+    rows, used_header_as_row = _single_row_normalization(raw_rows, header_terms)
+    if not rows:
+        return []
 
     row_records: list[dict[str, Any]] = []
 
     for row_index, row in enumerate(rows):
-        row = list(row)
+        row = [str(cell).strip() if cell else "" for cell in row]
 
-        # align headers with row length
-        if len(header_terms) < len(row):
-            header_terms_extended = header_terms + [
-                f"extra_col_{i+1}" for i in range(len(row) - len(header_terms))
-            ]
+        if used_header_as_row:
+            headers = [f"col_{i+1}" for i in range(len(row))]
         else:
-            header_terms_extended = header_terms[:]
-
-        if len(header_terms_extended) > len(row):
-            row += [""] * (len(header_terms_extended) - len(row))
+            headers = _align_headers_to_row(header_terms, len(row))
 
         row_values = {
-            str(col).strip(): (str(val).strip() if val else "")
-            for col, val in zip(header_terms_extended, row)
-            if str(col).strip()
+            header: value
+            for header, value in zip(headers, row)
+            if header
         }
 
-        # first column usually acts as row label
-        row_label = ""
-        if header_terms_extended and row:
-            first_header = header_terms_extended[0]
-            row_label = row_values.get(first_header, "") or str(row[0]).strip()
+        row_label = next((value for value in row if value), "")
 
-        # lean search text
         search_parts: list[str] = []
-
         if caption:
             search_parts.append(str(caption))
-
         if row_label:
             search_parts.append(row_label)
 
-        for k, v in row_values.items():
-            if v and v != row_label:
-                search_parts.append(f"{k} {v}")
-
-        search_text = " ".join(search_parts).strip()
+        for key, value in row_values.items():
+            if value and value != row_label:
+                search_parts.append(f"{key} {value}")
 
         row_records.append({
             "block_type": "table_row",
@@ -189,9 +251,9 @@ def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
             "row_label": row_label,
             "section_path": section_path,
             "caption": caption,
-            "header_terms": header_terms_extended,
+            "header_terms": headers,
             "row_values": row_values,
-            "search_text": search_text,
+            "search_text": " ".join(search_parts).strip(),
         })
 
     return row_records

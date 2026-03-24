@@ -67,6 +67,7 @@ def build_repair_prompt(question: str, bad_json: str, error: str, meta: Dict[str
         f"ERROR: {error}\n\n"
         "Fix it to pass validation.\n"
         "Return ONLY valid JSON. No prose.\n\n"
+        "Do not include any prefix such as CORRECT_JSON or FIXED_JSON. \n"
         f"QUESTION:\n{question}\n\n"
         f"PREVIOUS_JSON:\n{bad_json}\n\n"
         f"METADATA:\n{json.dumps(meta, ensure_ascii=False)}\n"

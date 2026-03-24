@@ -36,7 +36,6 @@ def llm_make_params(
     t0 = time.time()
     raw = generate_json_only(PARAM_LLM, prompt).strip()
     print("llm seconds:", round(time.time() - t0, 2))
-    print("raw repr:", len(raw))
 
     for attempt in range(max_repairs + 1):
         try:
@@ -45,7 +44,7 @@ def llm_make_params(
             error = "invalid_json"
             raw = generate_json_only(
                 PARAM_LLM,
-                build_repair_prompt(question, raw, error)
+                build_repair_prompt(question, raw, error, metadata)
             ).strip()
             continue
 
@@ -54,7 +53,7 @@ def llm_make_params(
             error = "missing_category_or_query"
             raw = generate_json_only(
                 PARAM_LLM,
-                build_repair_prompt(question, raw, error)
+                build_repair_prompt(question, raw, error, metadata)
             ).strip()
             continue
 

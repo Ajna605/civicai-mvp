@@ -119,4 +119,22 @@ def build_table_summary_chunks(
 
     return chunks
 
+def _align_headers_to_row(header_terms: list[str], row_len: int) -> list[str]:
+    headers = [str(h).strip() if h else "" for h in header_terms]
+
+    if len(headers) < row_len:
+        headers = headers + [f"extra_col_{i+1}" for i in range(row_len - len(headers))]
+    else:
+        headers = headers[:row_len]
+
+    return headers
+
+def _single_row_normalization(rows: list, header_terms: list) -> tuple[list[list[str]], bool]:
+    if rows:
+        return rows, False
+
+    if header_terms:
+        return [header_terms], True
+
+    return [], False
 

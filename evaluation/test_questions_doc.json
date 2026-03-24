@@ -37,7 +37,7 @@
   },
   {
     "id": "Q1.3",
-    "question": "What is the Goal 2 say about the 5-Year Capital Improvement Program?",
+    "question": "What is the Goal CIE-2. say about the 5-Year Capital Improvement Program?",
     "category": "policy_lookup",
     "expected": {
       "must_mention_any": ["5-Year Capital Improvement Program", " Goal CIE-2."],
@@ -45,11 +45,11 @@
       "source_document": "Coral_Gables_Comprehensive_Plan"
     },
     "known_issue": false,
-    "notes": "Part of ID removed - 'CIE-'"
+    "notes": ""
   },
   {
     "id": "Q1.4",
-    "question": "Tell me about Policy 1.18.1. regarding Sunrise Harbour Subdivision",
+    "question": "Tell me about Policy FLU-1.18.1. regarding Sunrise Harbour Subdivision",
     "category": "policy_lookup",
     "expected": {
       "must_mention_any": ["Sunrise Harbour Subdivision", "Policy FLU-1.18.1."],
@@ -57,12 +57,12 @@
       "source_document": "Coral_Gables_Comprehensive_Plan"
     },
     "known_issue": false,
-    "notes": "Part of ID removed - FLU-"
+    "notes": ""
   },
   {
     "id": "Q1.5",
     "question": "Give details about 2.1.2. about limiting public expenditures  ",
-    "category": "policy_lookup",
+    "category": "fuzzy_policy_lookup",
     "expected": {
       "must_mention_any": ["Policy SAF-2.1.2."],
       "should_not_mention": [],
@@ -110,7 +110,7 @@
   {
     "id": "Q1.9",
     "question": "Tell me about 3.2. regarding commercial traffic intrusion?",
-    "category": "policy_lookup",
+    "category": "fuzzy_policy_lookup",
     "expected": {
       "must_mention_any": ["Objective MOB-3.2."],
       "should_not_mention": [],
@@ -445,6 +445,17 @@
       "should_not_mention": []
     },
     "notes": "Find information from split cell"
+  },
+  {
+    "id": "Q4.8",
+    "question": "What is the Minimum & Maximum Thresholds based upon FAR for Industrial Zones?",
+    "category": "table_lookup",
+    "expected": {
+      "must_mention_all": ["Industrial", "Minimum & Maximum Thresholds based upon FAR"],
+      "must_mention_any": ["5%","0%"],
+      "should_not_mention": []
+    },
+    "notes": "Tricky table set up"
   },
   {
     "id": "Q5",

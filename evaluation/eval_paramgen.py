@@ -1,8 +1,9 @@
 from __future__ import annotations
 import argparse, json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
-from sql_engine.llm_utils.query_guards import direct_measure_first_guard
+from typing import Any, Dict, List
+from collections import Counter, defaultdict
+from sql_engine.llm_utils.query_guards import resolve_measure_override
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
 from sql_engine.llm_utils.validator import validate_measure_group_consistency
 
@@ -48,22 +49,48 @@ def main():
     query_exact_ok = 0
 
     rows = []
+
+    # Overall failure counts
+    failure_counts = Counter()
+
+    # Per-category stats
+    per_category = defaultdict(lambda: {
+        "total": 0,
+        "schema_pass": 0,
+        "category_match": 0,
+        "query_exact_match": 0,
+        "failure_types": Counter(),
+    })
+
     for ex in items:
         qid = ex.get("id")
         question = ex["question"]
-        print("question", question)
+        print("QUESTION", question)
         gold_cat = ex["category"]
         gold_query = ex.get("query", {})
 
-        measure_override = direct_measure_first_guard(question, meta)
+        measure_override = resolve_measure_override(question, meta)
+        print("measure override", measure_override)
 
-        rec: Dict[str, Any] = {"id": qid, "question": question, "gold_category": gold_cat, "gold_query": gold_query}
+        rec: Dict[str, Any] = {
+            "id": qid,
+            "question": question,
+            "gold_category": gold_cat,
+            "gold_query": gold_query,
+        }
+
+        per_category[gold_cat]["total"] += 1
 
         try:
-            pred = llm_make_params(question, meta, max_repairs=args.max_repairs, constraints=measure_override)
+            pred = llm_make_params(
+                question,
+                meta,
+                max_repairs=args.max_repairs,
+                constraints=measure_override,
+            )
+            print("pred", pred)
             rec["pred"] = pred
-            print("pred chars:", len(pred))
-
+            
             pred_cat = pred.get("category")
             pred_query = pred.get("query")
 
@@ -80,22 +107,45 @@ def main():
 
             if rec["schema_pass"]:
                 json_and_schema_ok += 1
+                per_category[gold_cat]["schema_pass"] += 1
 
             rec["pred_category"] = pred_cat
             rec["category_match"] = (pred_cat == gold_cat)
             if rec["category_match"]:
                 cat_ok += 1
+                per_category[gold_cat]["category_match"] += 1
 
             # Only do exact query match if schema/semantic validation passed
             rec["query_exact_match"] = rec["schema_pass"] and exact_match(pred_query, gold_query)
             if rec["query_exact_match"]:
                 query_exact_ok += 1
+                per_category[gold_cat]["query_exact_match"] += 1
+
+            # failure type
+            if not schema_pass:
+                failure_type = "schema_missing"
+            elif not group_ok:
+                failure_type = "measure_group_invalid"
+            elif not rec["category_match"]:
+                failure_type = "category_mismatch"
+            elif not rec["query_exact_match"]:
+                failure_type = "query_mismatch"
+            else:
+                failure_type = "success"
+
+            rec["failure_type"] = failure_type
+            failure_counts[failure_type] += 1
+            per_category[gold_cat]["failure_types"][failure_type] += 1
 
         except Exception as e:
             rec["error"] = str(e)
             rec["schema_pass"] = False
             rec["category_match"] = False
             rec["query_exact_match"] = False
+            rec["failure_type"] = "exception"
+
+            failure_counts["exception"] += 1
+            per_category[gold_cat]["failure_types"]["exception"] += 1
 
         rows.append(rec)
 
@@ -108,6 +158,25 @@ def main():
     print(f"Schema present: {json_and_schema_ok}/{total} = {json_and_schema_ok/total:.2%}")
     print(f"Category exact: {cat_ok}/{total} = {cat_ok/total:.2%}")
     print(f"Query exact: {query_exact_ok}/{total} = {query_exact_ok/total:.2%}")
+    print()
+
+    print("=== Overall Failure Types ===")
+    for k, v in failure_counts.most_common():
+        print(f"{k}: {v}/{total} = {v/total:.2%}")
+    print()
+
+    print("=== Per-Category Breakdown ===")
+    for cat, stats in sorted(per_category.items()):
+        cat_total = stats["total"]
+        print(f"[{cat}] total={cat_total}")
+        print(f"  schema_pass:      {stats['schema_pass']}/{cat_total} = {stats['schema_pass']/cat_total:.2%}")
+        print(f"  category_match:   {stats['category_match']}/{cat_total} = {stats['category_match']/cat_total:.2%}")
+        print(f"  query_exact:      {stats['query_exact_match']}/{cat_total} = {stats['query_exact_match']/cat_total:.2%}")
+        print("  failure_types:")
+        for ft, count in stats["failure_types"].most_common():
+            print(f"    - {ft}: {count}/{cat_total} = {count/cat_total:.2%}")
+        print()
+
     print(f"Wrote: {out_path}")
 
 if __name__ == "__main__":
