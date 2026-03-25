@@ -70,7 +70,6 @@ def main():
         gold_query = ex.get("query", {})
 
         measure_override = resolve_measure_override(question, meta)
-        print("measure override", measure_override)
 
         rec: Dict[str, Any] = {
             "id": qid,
@@ -82,13 +81,13 @@ def main():
         per_category[gold_cat]["total"] += 1
 
         try:
-            pred = llm_make_params(
-                question,
-                meta,
-                max_repairs=args.max_repairs,
-                constraints=measure_override,
-            )
-            print("pred", pred)
+            if measure_override and "force_query" in measure_override:
+                pred = {
+                    "category": measure_override["force_category"],
+                    "query": measure_override["force_query"],
+                }
+            else:
+                pred = llm_make_params(question, meta, max_repairs=args.max_repairs, constraints=measure_override)
             rec["pred"] = pred
             
             pred_cat = pred.get("category")

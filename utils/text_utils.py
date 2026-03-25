@@ -33,3 +33,13 @@ def extract_code_from_title(title: str | None) -> str | None:
         return None
     m = re.search(r"\b([A-Z]{2,8}-\d+(?:\.\d+)*)\b", title)
     return m.group(1) if m else None
+
+###### FOR SQL Query Building
+TOKEN_NORMALIZATION = {
+    "percentage": "percent",
+    "percentages": "percent",
+    "avg": "average",
+    "mean": "average",
+    "males": "male",
+    "females": "female",
+}
