@@ -29,6 +29,5 @@ def build_param_llm(cfg: Optional[ParamLLMConfig] = None) -> HuggingFaceLLM:
 
 def generate_json_only(llm: HuggingFaceLLM, prompt: str) -> str:
     resp = llm.complete(prompt)
-    print("response", resp)
     text = getattr(resp, "text", str(resp))
     return text.strip()

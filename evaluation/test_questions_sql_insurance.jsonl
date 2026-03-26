@@ -1,0 +1,65 @@
+   [ {
+    "id": "Q1",
+    "question": "How many people of over 65 years are insured in Coral Gables City?",
+    "category": "cell_lookup",
+    "query": {
+      "label": "Coral Gables city, Florida",
+      "measure": "Total",
+      "subject": "Over 65 years and older",
+      "stat_type": "Estimate"
+    },
+    "expected": {
+      "expected_numbers": 9250,
+      "tolerance": 0
+    },
+    "known_issue": false
+  },
+    {
+    "id": "Q1.2",
+    "question": "How many woman are insured in Coral Gables City?",
+    "category": "cell_lookup",
+    "query": {
+      "label": "Coral Gables city, Florida",
+      "measure": "Total",
+      "subject": "Woman",
+      "stat_type": "Estimate"
+    },
+    "expected": {
+      "expected_numbers": 25544,
+      "tolerance": 0
+    },
+    "known_issue": false
+  },
+   {
+    "id": "Q1.3",
+    "question": "What percentage of white people are uninsured?",
+    "category": "cell_lookup",
+    "query": {
+      "label": "Coral Gables city, Florida",
+      "measure": "Percent",
+      "subject": "White alone",
+      "stat_type": "Estimate"
+    },
+    "expected": {
+      "expected_numbers": 3.5,
+      "tolerance": 2
+    },
+    "known_issue": false
+  },
+   {
+    "id": "Q1.4",
+    "question": "What is the margin of error of civilians in Coral Gables city who have not worked who are insured?",
+    "category": "cell_lookup",
+    "query": {
+      "label": "Coral Gables city, Florida",
+      "measure": "Total",
+      "subject": "Insured",
+      "stat_type": "Margin of Error"
+    },
+    "expected": {
+      "expected_numbers": 808,
+      "tolerance": 0
+    },
+    "known_issue": false
+  }
+]

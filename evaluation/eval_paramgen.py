@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from collections import Counter, defaultdict
 from sql_engine.llm_utils.query_guards import resolve_measure_override
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
-from sql_engine.llm_utils.validator import validate_measure_group_consistency
+from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures
 
 DEFAULT_SUBJECT = "Total"
 DEFAULT_STAT_TYPE = "Estimate"
@@ -28,6 +28,39 @@ def normalize_gold(ex: Dict[str, Any]) -> Dict[str, Any]:
     return ex
 
 def exact_match(a: Any, b: Any) -> bool:
+    # same type required
+    if type(a) != type(b):
+        return False
+
+    # dict → compare keys + recurse
+    if isinstance(a, dict):
+        if set(a.keys()) != set(b.keys()):
+            return False
+        return all(exact_match(a[k], b[k]) for k in a)
+
+    # list → order-insensitive comparison
+    if isinstance(a, list):
+        if len(a) != len(b):
+            return False
+
+        # try simple sorted comparison first (fast path)
+        try:
+            return sorted(a) == sorted(b)
+        except TypeError:
+            # fallback for nested/unhashable items
+            b_used = [False] * len(b)
+            for item_a in a:
+                found = False
+                for i, item_b in enumerate(b):
+                    if not b_used[i] and exact_match(item_a, item_b):
+                        b_used[i] = True
+                        found = True
+                        break
+                if not found:
+                    return False
+            return True
+
+    # everything else → direct equality
     return a == b
 
 def main():
@@ -70,6 +103,9 @@ def main():
         gold_query = ex.get("query", {})
 
         measure_override = resolve_measure_override(question, meta)
+        print("MEASURE OVERRIDE")
+        print(measure_override)
+
 
         rec: Dict[str, Any] = {
             "id": qid,
@@ -85,9 +121,13 @@ def main():
                 pred = {
                     "category": measure_override["force_category"],
                     "query": measure_override["force_query"],
+
                 }
             else:
                 pred = llm_make_params(question, meta, max_repairs=args.max_repairs, constraints=measure_override)
+                # for cases with measure group
+                pred = enforce_deterministic_measures(pred, question, meta)
+
             rec["pred"] = pred
             
             pred_cat = pred.get("category")

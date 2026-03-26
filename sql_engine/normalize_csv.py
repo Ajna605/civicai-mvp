@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Optional, Tuple, Any
 import pandas as pd
 import re
 import argparse, json
-from utils.text_utils import clean_text
+from utils.text_utils import clean_text, infer_table_name
 
 YEAR_RE = re.compile(r"^(19|20)\d{2}$")
 
@@ -192,20 +192,22 @@ def normalize_csv_to_facts(
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--in", dest="in_dir", required=True)
-    p.add_argument("--out", dest="out_path", required=True)
     return p.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
     in_dir = Path(args.in_dir)
-    out_path = Path(args.out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    table_name = infer_table_name(in_dir)
+    out_path = Path("data/normalized/csv") / f"{table_name}.jsonl"
 
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    
     csv_files = sorted(in_dir.glob("*.csv"))
     total = 0
 
     with out_path.open("w", encoding="utf-8") as f:
         for csv_path in csv_files:
+
             facts = normalize_csv_to_facts(
                 csv_path=csv_path,
                 source_file=csv_path.name,

@@ -325,7 +325,7 @@ def age_under_measures_in(target: int, measures: List[str]) -> List[str]:
     return [m for _, _, m in bands]
 
 OVER_HINT = re.compile(
-    r"\b(?P<op>over|above|greater than|at least)\s+(?P<n>\d{1,3})(?:\s+years?)?\b",
+    r"\b(?P<op>over|above|greater than|at least)\s+(?P<n>\d{1,3})(?!\s*(?:to|\-)\s*\d{1,3})(?:\s+years?)?\b",
     re.I,
 )
 
@@ -342,27 +342,88 @@ def age_over_measures_in(target: int, measures: List[str]) -> List[str]:
     return [m for _, _, m in bands]
 
 
-def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
-    measures = meta.get("measures", []) or []
+RANGE_HINT = re.compile(
+    r"\b(?:(?:from|between)\s+)?(?P<low>\d{1,3})\s*(?:to|\-)\s*(?P<high>\d{1,3})(?:\s+years?\s+old|\s+years?)?\b",
+    re.I,
+)
+
+def measures_overlapping_range(low: int, high: int, measures: List[str]) -> List[str]:
+    """
+    Select measures whose age-band overlaps the requested inclusive range [low, high].
+
+    Examples:
+      low=5, high=44
+      - "5 to 14 years" overlaps  -> include
+      - "15 to 17 years" overlaps -> include
+      - "Under 18 years" overlaps -> include
+      - "18 to 24 years" overlaps -> include
+      - "15 to 44 years" overlaps -> include
+      - "45 to 49 years" no overlap -> exclude
+    """
+    bands = []
+    for m in measures:
+        b = parse_age_band(m)
+        if not b:
+            continue
+
+        m_low, m_high = b
+        m_lower = m.lower()
+
+        # reject open-ended categories for closed ranges
+        if "and over" in m_lower:
+            continue
+
+        # overlap test for inclusive intervals
+        if not (m_high < low or m_low > high):
+            bands.append((m_low, m_high, m))
+
+    bands.sort(key=lambda x: x[0])
+    return [m for _, _, m in bands]
+
+
+def age_range_sum_guard(
+    question: str,
+    meta: dict,
+    merged: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    merged = merged or {}
+
+    # If an earlier guard already chose a measure group, respect it.
+    measure_group = merged.get("force_measure_group")
+
+    if measure_group:
+        measures = meta.get("measure_groups", {}).get(measure_group, []) or []
+    else:
+        measures = meta.get("measures", []) or []
+
+    # 1. explicit closed range wins
+    range_m = RANGE_HINT.search(question)
+    if range_m:
+        low = int(range_m.group("low"))
+        high = int(range_m.group("high"))
+        measures_in = measures_overlapping_range(low, high, measures)
+        if not measures_in:
+            return None
+
+        # one exact measure -> let cell_lookup handle it
+        if len(measures_in) == 1:
+            return None
+
+        return {
+            "force_category": "aggregation",
+            "force_op": "sum",
+            "force_measures_in": measures_in,
+            "reason": "closed_range_sum",
+        }
 
     under_m = UNDER_HINT.search(question)
-    over_m = OVER_HINT.search(question)
-
     if under_m:
         target = int(under_m.group("n"))
-
-        # # Case 1: dataset already has exact "Under X years" bucket
-        # direct = f"Under {target} years"
-        # if direct in measures:
-        #     return {
-        #         "force_category": "cell_lookup",
-        #         "force_measure": direct,
-        #         "reason": "direct_under_bucket",
-        #     }
-
-        # Case 2: deterministic aggregation over all matching lower-age bands
         measures_in = age_under_measures_in(target, measures)
         if not measures_in:
+            return None
+
+        if len(measures_in) == 1:
             return None
 
         return {
@@ -372,11 +433,14 @@ def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
             "reason": "under_range_sum",
         }
 
+    over_m = OVER_HINT.search(question)
     if over_m:
         target = int(over_m.group("n"))
-
         measures_in = age_over_measures_in(target, measures)
         if not measures_in:
+            return None
+
+        if len(measures_in) == 1:
             return None
 
         return {
@@ -388,16 +452,100 @@ def age_range_sum_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
 
     return None
 
+CHART_HINT = re.compile(
+    r"\b(chart|plot|graph|visualize|pie|bar|line|scatter|histogram)\b",
+    re.I,
+)
+
+ROW_FILTER_HINT = re.compile(
+    r"\b(most|least|highest|lowest|largest|smallest|top|bottom|prominent|most populated|most common|which one)\b",
+    re.I,
+)
+
+def ranking_intent_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
+    """
+    Distinguish row_filter from chart_request only.
+    Do not decide measure_group, subject, stat_type, etc.
+    """
+    q = question.strip()
+
+    # Explicit chart language should stay with LLM / chart path
+    if CHART_HINT.search(q):
+        return {
+            "force_category": "chart_request",
+            "reason": "chart_intent"
+        }
+
+    # Ranking / "which one is highest" style questions should be row_filter
+    if ROW_FILTER_HINT.search(q):
+        return {
+            "force_category": "row_filter",
+            "reason": "ranking_intent"
+        }
+
+    return None
+
+def measure_group_guard(question: str, meta: dict, threshold: float = 0.75, margin: float = 0.20):
+    groups = meta.get("measure_headings", []) or []
+    if not groups:
+        return None
+
+    df, idf = build_vocab_token_stats(groups)
+
+    scored = []
+    for g in groups:
+        hit = best_vocab_match(question, [g], df, idf, max_df_frac=0.8)
+        if hit:
+            scored.append(hit)
+
+    if not scored:
+        return None
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    best_group, best_score = scored[0]
+    second_score = scored[1][1] if len(scored) > 1 else 0.0
+
+    if best_score < threshold:
+        return None
+
+    if (best_score - second_score) < margin:
+        return None
+
+    return {
+        "force_measure_group": best_group,
+        "score": best_score,
+        "reason": "measure_group_match",
+    }
+
 
 ################### FIND WHICH GUARD FIRES FIRST ###################
 GUARDS = [
+    ranking_intent_guard,
+    measure_group_guard,
     direct_measure_first_guard,
-    age_range_sum_guard
+    age_range_sum_guard,
 ]
 
-def resolve_measure_override(question: str, meta: dict):
-    for guard in GUARDS:
-        override = guard(question, meta)
-        if override:
-            return override
-    return None
+## Merges guard results - some with precedence
+def resolve_measure_override(question: str, meta: dict) -> Optional[Dict[str, Any]]:
+    merged: Dict[str, Any] = {}
+
+    # 1. soft guards: safe to merge
+    for guard in [ranking_intent_guard, measure_group_guard]:
+        hit = guard(question, meta)
+        if hit:
+            merged.update(hit)
+
+    # 2. exact direct lookup should win and stop
+    hit = direct_measure_first_guard(question, meta)
+    if hit:
+        merged.update(hit)
+        return merged
+
+    # 3. range aggregation can merge with group/category constraints
+    hit = age_range_sum_guard(question, meta, merged)
+    if hit:
+        merged.update(hit)
+        return merged
+
+    return merged or None

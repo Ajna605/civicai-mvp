@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Any
 import json
+from pathlib import Path
 
 def clean_text(s: str) -> str:
     s = s.replace("\u00a0", " ")
@@ -43,3 +44,42 @@ TOKEN_NORMALIZATION = {
     "males": "male",
     "females": "female",
 }
+
+###### EXTRACT 1ST JSON OBJECT FROM LLM RESPONSE
+def extract_first_valid_param_obj(text: str):
+    decoder = json.JSONDecoder()
+    i = 0
+    n = len(text)
+
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        try:
+            obj, end = decoder.raw_decode(text[i:])
+            if (
+                isinstance(obj, dict)
+                and set(obj.keys()) == {"category", "query"}
+                and isinstance(obj.get("category"), str)
+                and isinstance(obj.get("query"), dict)
+            ):
+                return obj
+        except Exception:
+            pass
+        i += 1
+
+    raise ValueError("No valid top-level JSON object found")
+
+
+## Make table name from filename
+def infer_table_name(path: Path) -> str:
+    stem = path.stem.lower()
+    stem = re.sub(r"[^a-z0-9]+", "_", stem).strip("_")
+
+    if stem.endswith("_facts"):
+        return stem
+
+    if stem and stem[0].isdigit():
+        stem = f"t_{stem}"
+
+    return f"{stem}_facts"

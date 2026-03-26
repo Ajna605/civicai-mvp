@@ -2,10 +2,10 @@
 
 import json
 from pathlib import Path
-from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt
+from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, resolve_measures_in_from_group
 from typing import Dict, Any
 from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_llm
-from sql_engine.llm_utils.query_guards import resolve_measure_override
+from utils.text_utils import extract_first_valid_param_obj
 import time
 
 
@@ -24,20 +24,23 @@ def llm_make_params(
     question: str,
     metadata: Dict[str, Any],
     constraints: dict | None = None,
-    max_repairs: int = 0 ##DEBUG
+    max_repairs: int = 0,  # DEBUG
 ) -> Dict[str, Any]:
 
-    constraints = resolve_measure_override(question, metadata)
-
     prompt = make_param_prompt(question, metadata, constraints=constraints)
+
     t0 = time.time()
     raw = generate_json_only(PARAM_LLM, prompt).strip()
     print("llm seconds:", round(time.time() - t0, 2))
 
     for attempt in range(max_repairs + 1):
         try:
-            obj = json.loads(raw)
+            obj = extract_first_valid_param_obj(raw)
         except Exception:
+            if attempt == max_repairs:
+                raise ValueError(
+                    f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
+                )
             error = "invalid_json"
             raw = generate_json_only(
                 PARAM_LLM,
@@ -45,8 +48,11 @@ def llm_make_params(
             ).strip()
             continue
 
-        # Optional: plug in your real validator here
         if not isinstance(obj, dict) or "category" not in obj or "query" not in obj:
+            if attempt == max_repairs:
+                raise ValueError(
+                    f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
+                )
             error = "missing_category_or_query"
             raw = generate_json_only(
                 PARAM_LLM,
@@ -54,9 +60,28 @@ def llm_make_params(
             ).strip()
             continue
 
-        return obj  # success
+        # semantic validation
+        group_ok, group_reason = validate_measure_group_consistency(obj, metadata)
+        if not group_ok:
+            if attempt == max_repairs:
+                raise ValueError(
+                    f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
+                )
+            repair_prompt = build_repair_prompt(
+                question,
+                json.dumps(obj, ensure_ascii=False),
+                group_reason,
+                metadata,
+            )
+            raw = generate_json_only(PARAM_LLM, repair_prompt).strip()
+            continue
 
-    raise ValueError(f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}")
+        return obj
+
+    raise ValueError(
+        f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
+    )
+
 
 # if __name__ == "__main__":
 
