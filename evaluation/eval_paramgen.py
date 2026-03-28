@@ -67,10 +67,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--eval_path", required=True, help="Path to test_questions.json")
     ap.add_argument("--out_path", default="eval/paramgen_results.jsonl")
+    ap.add_argument("--meta_path", default="storage/metadata/demographics_facts_metadata.json")
     ap.add_argument("--max_repairs", type=int, default=2)
     args = ap.parse_args()
 
-    meta = load_metadata()
+    meta = load_metadata(args.meta_path)
     items = [normalize_gold(x) for x in load_questions_json(args.eval_path)]
 
     out_path = Path(args.out_path)

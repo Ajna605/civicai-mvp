@@ -20,8 +20,8 @@
     "category": "cell_lookup",
     "query": {
       "label": "Coral Gables city, Florida",
-      "measure": "Total",
-      "subject": "Woman",
+      "measure": "Female", 
+      "subject": "Total",
       "stat_type": "Estimate"
     },
     "expected": {
@@ -36,7 +36,7 @@
     "category": "cell_lookup",
     "query": {
       "label": "Coral Gables city, Florida",
-      "measure": "Percent",
+      "measure": "Percent Uninsured",
       "subject": "White alone",
       "stat_type": "Estimate"
     },
@@ -52,7 +52,7 @@
     "category": "cell_lookup",
     "query": {
       "label": "Coral Gables city, Florida",
-      "measure": "Total",
+      "measure": "Did not work",
       "subject": "Insured",
       "stat_type": "Margin of Error"
     },

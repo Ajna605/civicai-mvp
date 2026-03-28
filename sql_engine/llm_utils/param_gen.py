@@ -11,6 +11,7 @@ import time
 
 def load_metadata(path: str | None = None) -> dict:
     # If no path passed, load metadata.json that sits next to this file (llm_utils/)
+    
     if path is None:
         path = str(Path(__file__).resolve().parent / "metadata.json")
 
