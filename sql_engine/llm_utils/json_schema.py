@@ -49,15 +49,15 @@ Rules:
 FEWSHOT_TEXT = r"""
 EXAMPLES:
 
-Q: How many males per 100 females?
-A: {"category":"cell_lookup","query":{"label":"Coral Gables city, Florida","measure":"Sex ratio (males per 100 females)","subject":"Total","stat_type":"Estimate"}}
-
-Q: What is the most populated age range of males in Coral Gables?
-A: {"category":"row_filter","query":{"measure_group":"AGE","filters":{"label":"Coral Gables city, Florida","subject":"Male","stat_type":"Estimate","measures_in":["Under 5 years","5 to 9 years","10 to 14 years","15 to 19 years","20 to 24 years","25 to 29 years","30 to 34 years","35 to 39 years","40 to 44 years","45 to 49 years","50 to 54 years","55 to 59 years","60 to 64 years","65 to 69 years","70 to 74 years","75 to 79 years","80 to 84 years","85 years and over"]},"order":"desc","limit":1}}
-
-Q: Create a bar chart of age groups vs total population.
-A: {"category":"chart_request","query":{"measure_group":"AGE","chart_type":"categorical","viz_type":"bar","filters":{"label":"Coral Gables city, Florida","subject":"Total","stat_type":"Estimate","measures_in":["Under 5 years","5 to 9 years","10 to 14 years","15 to 19 years","20 to 24 years","25 to 29 years","30 to 34 years","35 to 39 years","40 to 44 years","45 to 49 years","50 to 54 years","55 to 59 years","60 to 64 years","65 to 69 years","70 to 74 years","75 to 79 years","80 to 84 years","85 years and over"]},"x":"measure","y":"value"}}
-
-Q: What percentage of the population is aged less than 24?
-A: {"category":"aggregation","query":{"measure_group":"AGE","op":"sum","filters":{"label":"Coral Gables city, Florida","subject":"Percent","stat_type":"Estimate","measures_in":["Under 5 years","5 to 9 years","10 to 14 years","15 to 19 years","20 to 24 years"]}}}
-"""
+Q: What is the value for <one specific measure> in <one specific place>?
+A: {"category":"cell_lookup","query":{"label":"<EXACT label from METADATA.labels>","measure":"<EXACT measure from METADATA.measures>","subject":"<EXACT subject from METADATA.subjects>","stat_type":"Estimate"}}
+ 
+Q: Which category has the highest value among a set of measures?
+A: {"category":"row_filter","query":{"measure_group":"<EXACT measure_group>","filters":{"label":"<EXACT label>","subject":"<EXACT subject>","stat_type":"Estimate","measures_in":["<EXACT measure 1>","<EXACT measure 2>"]},"order":"desc","limit":1}}
+ 
+Q: Create a bar chart comparing multiple measures for one label/subject.
+A: {"category":"chart_request","query":{"measure_group":"<EXACT measure_group>","chart_type":"categorical","filters":{"label":"<EXACT label>","subject":"<EXACT subject>","stat_type":"Estimate","measures_in":["<EXACT measure 1>","<EXACT measure 2>"]},"x":"measure","y":"value","sort":"x_asc"}}
+ 
+Q: What is the total/average/min/max across several measures?
+A: {"category":"aggregation","query":{"measure_group":"<EXACT measure_group>","op":"sum","filters":{"label":"<EXACT label>","subject":"<EXACT subject>","stat_type":"Estimate","measures_in":["<EXACT measure 1>","<EXACT measure 2>"]}}}
+ """

@@ -2,10 +2,13 @@
 
 import json
 from pathlib import Path
-from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, resolve_measures_in_from_group
+from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, validate_against_metadata
 from typing import Dict, Any
 from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_llm
 from utils.text_utils import extract_first_valid_param_obj
+from sql_engine.llm_utils.query_guards import resolve_measure_override
+from copy import deepcopy
+
 import time
 
 
@@ -21,12 +24,53 @@ def load_metadata(path: str | None = None) -> dict:
 PARAM_LLM = build_param_llm()
 print(PARAM_LLM._model.device)
 
+def apply_forced_constraints(obj: Dict[str, Any], constraints: dict | None) -> Dict[str, Any]:
+    if not constraints:
+        return obj
+    out = deepcopy(obj)
+    if "force_category" in constraints:
+        out["category"] = constraints["force_category"]
+    out.setdefault("query", {})
+    if not isinstance(out["query"], dict):
+        out["query"] = {}
+
+    # cell_lookup enforcement
+    if out.get("category") == "cell_lookup":
+        q = out["query"]
+        if "force_label" in constraints:
+            q["label"] = constraints["force_label"]
+        if "force_measure" in constraints:
+            q["measure"] = constraints["force_measure"]
+        if "force_subject" in constraints:
+            q["subject"] = constraints["force_subject"]
+        if "force_stat_type" in constraints:
+            q["stat_type"] = constraints["force_stat_type"]
+        out["query"] = q
+
+    # aggregation enforcement (if you use it)
+    if out.get("category") == "aggregation":
+        q = out["query"]
+        if "force_op" in constraints:
+            q["op"] = constraints["force_op"]
+        if "force_measures_in" in constraints:
+            q.setdefault("filters", {})
+            q["filters"]["measures_in"] = constraints["force_measures_in"]
+        out["query"] = q
+
+    return out
+
+
 def llm_make_params(
     question: str,
     metadata: Dict[str, Any],
     constraints: dict | None = None,
     max_repairs: int = 0,  # DEBUG
 ) -> Dict[str, Any]:
+    
+    # IMPORTANT: if constraints are provided by the caller (e.g., evaluation harness),
+    # do not overwrite them. Otherwise compute deterministic override here.
+    if constraints is None:
+        constraints = resolve_measure_override(question, metadata)
 
     prompt = make_param_prompt(question, metadata, constraints=constraints)
 
@@ -77,6 +121,19 @@ def llm_make_params(
             raw = generate_json_only(PARAM_LLM, repair_prompt).strip()
             continue
 
+
+        # Hard-enforce any forced constraints (prevents invented strings).
+        obj = apply_forced_constraints(obj, constraints)
+
+        # If model invented a cell_lookup field not in metadata, force a repair
+        # rather than returning junk that will never execute.
+        if obj.get("category") == "cell_lookup" and not validate_against_metadata(obj.get("query", {}), metadata):
+            error = "cell_lookup_values_not_in_metadata"
+            raw = generate_json_only(
+                PARAM_LLM,
+                build_repair_prompt(question, raw, error, metadata)
+            ).strip()
+            continue
         return obj
 
     raise ValueError(

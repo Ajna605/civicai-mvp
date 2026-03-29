@@ -197,6 +197,9 @@ def extract_cell_lookup_slots(question: str, meta: dict, threshold: float = 0.55
 
     if not measure:
         return None
+    
+    print("label", "measure", "subject", "stat_type")
+    print(label, measure, subject, stat_type)
 
     return {
         "label": label,
@@ -217,9 +220,11 @@ GROUP_HINT = re.compile(
 )
 
 CHART_HINT = re.compile(
-    r"\b(chart|plot|graph|visualize|bar chart|line chart|scatter|histogram|trend)\b",
-    re.I,
+     r"\b(chart|plot|graph|visualize|show|bar chart|line chart|scatter|histogram|trend|distribution|breakdown|broken down|by race|by disability|by age|by sex)\b",
+     re.I,
 )
+
+BREAKDOWN_HINT = re.compile(r"\b(break(?:ing)?\s+down|broken\s+down|by)\b", re.I)
 
 RANK_HINT = re.compile(
     r"\b(most|least|highest|lowest|largest|smallest|top|bottom|prominent|common)\b",
@@ -232,6 +237,19 @@ COMPARE_HINT = re.compile(
 )
 
 UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\s+(?P<n>\d{1,3})?\b", re.I)
+OVER_HINT = re.compile(
+    r"\b(?P<op>over|above|greater than|at least)\s+(?P<n>\d{1,3})(?!\s*(?:to|\-)\s*\d{1,3})(?:\s+years?)?\b",
+    re.I,
+)
+RANGE_HINT = re.compile(
+    r"\b(?:(?:from|between)\s+)?(?P<low>\d{1,3})\s*(?:to|\-)\s*(?P<high>\d{1,3})(?:\s+years?\s+old|\s+years?)?\b",
+    re.I,
+)
+
+ROW_FILTER_HINT = re.compile(
+    r"\b(most|least|highest|lowest|largest|smallest|top|bottom|prominent|most populated|most common|which one)\b",
+    re.I,
+)
 
 def direct_measure_first_guard(
     question: str,
@@ -289,6 +307,10 @@ def parse_age_band(measure: str) -> Optional[Tuple[int, int]]:
     - "20 to 24 years" -> (20, 24)
     - "85 years and over" -> (85, 10**9)  (not used for under-X)
     """
+    s = (measure or "").lower()
+    if "year" not in s:
+        return None
+
     m = UNDER_MEASURE_RE.match(measure)
     if m:
         high = int(m.group(1)) - 1
@@ -298,7 +320,7 @@ def parse_age_band(measure: str) -> Optional[Tuple[int, int]]:
     if m:
         return (int(m.group(1)), int(m.group(2)))
 
-    if "and over" in measure.lower():
+    if "and over" in s:
         nums = re.findall(r"\d{1,3}", measure)
         if nums:
             low = int(nums[0])
@@ -306,12 +328,40 @@ def parse_age_band(measure: str) -> Optional[Tuple[int, int]]:
 
     return None
 
+def _band_overlaps(a: Tuple[int,int], b: Tuple[int,int]) -> bool:
+    return not (a[1] < b[0] or b[1] < a[0])
+
+def _select_disjoint_prefer_finer(bands: List[Tuple[int,int,str]]) -> List[str]:
+    """
+    bands: (low, high, name)
+    Prefer finer (narrower) bands; avoid overlaps and avoid supersets like "Under 19 years".
+    Deterministic greedy selection:
+      - sort by (width asc, low asc, high asc, name)
+      - take band if it doesn't overlap any already selected
+    """
+    def width(x): 
+        low, high, _ = x
+        return high - low
+
+    bands_sorted = sorted(bands, key=lambda x: (width(x), x[0], x[1], x[2]))
+    chosen: List[Tuple[int,int,str]] = []
+    for low, high, name in bands_sorted:
+        b = (low, high)
+        if any(_band_overlaps(b, (c[0], c[1])) for c in chosen):
+            continue
+        chosen.append((low, high, name))
+
+    # Output in natural age order
+    chosen.sort(key=lambda x: x[0])
+    return [name for _, _, name in chosen]
+
+
 def age_under_measures_in(target: int, measures: List[str]) -> List[str]:
     """
     Select age bands whose upper bound <= target.
     For ACS-style, target=24 should include "20 to 24 years".
     """
-    bands = []
+    bands: List[Tuple[int,int,str]] = []
     for m in measures:
         b = parse_age_band(m)
         if not b:
@@ -321,15 +371,19 @@ def age_under_measures_in(target: int, measures: List[str]) -> List[str]:
             bands.append((low, high, m))
 
     # sort by low bound to keep x-axis natural
-    bands.sort(key=lambda x: x[0])
-    return [m for _, _, m in bands]
+    if not bands:
+        return []
 
-OVER_HINT = re.compile(
-    r"\b(?P<op>over|above|greater than|at least)\s+(?P<n>\d{1,3})(?!\s*(?:to|\-)\s*\d{1,3})(?:\s+years?)?\b",
-    re.I,
-)
+    # Prefer disjoint fine-grained partition; this will drop rolled-up buckets
+    # like "Under 19 years" if "Under 6 years" + "6 to 18 years" exist.
+    return _select_disjoint_prefer_finer(bands)
+
 
 def age_over_measures_in(target: int, measures: List[str]) -> List[str]:
+    """
+    Select age bands whose lower bound >= target.
+    Only age-like measures will be parsed by parse_age_band().
+    """
     bands = []
     for m in measures:
         b = parse_age_band(m)
@@ -338,14 +392,67 @@ def age_over_measures_in(target: int, measures: List[str]) -> List[str]:
         low, high = b
         if low >= target:
             bands.append((low, high, m))
+
     bands.sort(key=lambda x: x[0])
     return [m for _, _, m in bands]
 
 
-RANGE_HINT = re.compile(
-    r"\b(?:(?:from|between)\s+)?(?P<low>\d{1,3})\s*(?:to|\-)\s*(?P<high>\d{1,3})(?:\s+years?\s+old|\s+years?)?\b",
-    re.I,
-)
+def over_age_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
+    """
+    Handle queries like:
+      - "over 65"
+      - "65+"
+      - "65 and over"
+
+    Preference order:
+      1) If dataset has a direct rolled-up bucket (e.g., "Over 65 years and older"),
+         force cell_lookup to that exact measure.
+      2) Else, deterministically sum all age bands whose lower bound >= target.
+    """
+    measures = meta.get("measures", []) or []
+    q = (question or "").strip()
+    q_lower = q.lower()
+
+    m = OVER_HINT.search(q)
+    if m:
+        target = int(m.group("n"))
+    else:
+        # Basic support for "65+" and "65 and over" phrasing
+        plus = re.search(r"\b(?P<n>\d{1,3})\s*\+\b", q_lower)
+        and_over = re.search(r"\b(?P<n>\d{1,3})\s+(and\s+over|or\s+older)\b", q_lower)
+        if plus:
+            target = int(plus.group("n"))
+        elif and_over:
+            target = int(and_over.group("n"))
+        else:
+            return None
+
+    # Case 1: direct rolled-up bucket exists -> cell_lookup
+    # (You said you have a measure exactly called "Over 65 years and older")
+    direct_candidates = [
+        f"Over {target} years and older",
+        f"{target} years and over",
+        f"{target} years and older",
+    ]
+    for d in direct_candidates:
+        if d in measures:
+            return {
+                "force_category": "cell_lookup",
+                "force_measure": d,
+                "reason": "direct_over_bucket",
+            }
+
+    # Case 2: deterministic sum across age bands
+    measures_in = age_over_measures_in(target, measures)
+    if not measures_in:
+        return None
+
+    return {
+        "force_category": "aggregation",
+        "force_op": "sum",
+        "force_measures_in": measures_in,
+        "reason": "over_range_sum",
+    }
 
 def measures_overlapping_range(low: int, high: int, measures: List[str]) -> List[str]:
     """
@@ -452,15 +559,6 @@ def age_range_sum_guard(
 
     return None
 
-CHART_HINT = re.compile(
-    r"\b(chart|plot|graph|visualize|pie|bar|line|scatter|histogram)\b",
-    re.I,
-)
-
-ROW_FILTER_HINT = re.compile(
-    r"\b(most|least|highest|lowest|largest|smallest|top|bottom|prominent|most populated|most common|which one)\b",
-    re.I,
-)
 
 def ranking_intent_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
     """
@@ -517,35 +615,94 @@ def measure_group_guard(question: str, meta: dict, threshold: float = 0.75, marg
         "reason": "measure_group_match",
     }
 
+NEGATION_HINT = re.compile(r"\b(no|not|without|never|none)\b", re.I)
+
+
+def _negates_token(question: str, token: str, window_tokens: int = 3) -> bool:
+    """
+    Returns True if question contains a negation within N tokens before `token`.
+    Generic: catches patterns like "not insured", "without internet", "no vehicle".
+    """
+    q = tokenize(question)
+    t = token.lower()
+    for i, w in enumerate(q):
+        if w != t:
+            continue
+        start = max(0, i - window_tokens)
+        ctx = q[start:i]
+        if any(NEGATION_HINT.fullmatch(x) for x in ctx):
+            return True
+    return False
+
+
+def direct_subject_first_guard(
+    question: str,
+    meta: dict,
+    threshold: float = 0.9,
+    margin: float = 0.15,
+) -> Optional[Dict[str, Any]]:
+    """
+    Force subject when the question strongly matches a subject value.
+
+    Uses best_typed_matches(question, meta) so that subjects get looser filtering
+    (max_df_frac=0.8), which is important for short categorical subject vocabularies.
+    """
+    hits = best_typed_matches(question, meta)
+    subj_hit = hits.get("subjects")
+    if not subj_hit:
+        return None
+
+    subject, score = subj_hit
+
+    if score < threshold:
+        return None
+
+    return {
+        "force_subject": subject,
+        "score": score,
+        "reason": "direct_subject_match(best_typed_matches)",
+    }
+
+
+def chart_intent_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
+    print("CHART INTENT GUARD")
+    q = (question or "").strip()
+    if not q:
+        return None
+    # Strong signals for chart_request
+    if CHART_HINT.search(q) or BREAKDOWN_HINT.search(q):
+        print("INSIDEEEE")
+        return {
+            "force_category": "chart_request",
+            "reason": "chart_or_breakdown_intent",
+        }
+    
+    return None
+
 
 ################### FIND WHICH GUARD FIRES FIRST ###################
 GUARDS = [
-    ranking_intent_guard,
-    measure_group_guard,
-    direct_measure_first_guard,
-    age_range_sum_guard,
+    chart_intent_guard,
+    ranking_intent_guard,        # may force row_filter + limit
+    measure_group_guard,         # pins correct measure_group if needed
+    direct_subject_first_guard,  # prevents symmetric subject flips
+    age_range_sum_guard,         # under X
+    over_age_guard,              # over X / X+
+    direct_measure_first_guard,  # fallback: single direct measure -> cell_lookup
 ]
 
 ## Merges guard results - some with precedence
 def resolve_measure_override(question: str, meta: dict) -> Optional[Dict[str, Any]]:
+    """
+    Run all guards and MERGE their constraints.
+    Later guards win if they set the same key.
+    """
     merged: Dict[str, Any] = {}
-
-    # 1. soft guards: safe to merge
-    for guard in [ranking_intent_guard, measure_group_guard]:
-        hit = guard(question, meta)
-        if hit:
-            merged.update(hit)
-
-    # 2. exact direct lookup should win and stop
-    hit = direct_measure_first_guard(question, meta)
-    if hit:
-        merged.update(hit)
-        return merged
-
-    # 3. range aggregation can merge with group/category constraints
-    hit = age_range_sum_guard(question, meta, merged)
-    if hit:
-        merged.update(hit)
-        return merged
-
-    return merged or None
+    any_hit = False
+    for guard in GUARDS:
+        override = guard(question, meta)
+        if not override:
+            continue
+        any_hit = True
+        merged.update(override)
+    return merged if any_hit else None

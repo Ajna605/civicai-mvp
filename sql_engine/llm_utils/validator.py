@@ -13,8 +13,12 @@ def make_param_prompt(question: str, metadata: dict, constraints: Optional[Dict[
         lines = ["FORCED CONSTRAINTS (must follow exactly):"]
         if "force_category" in constraints:
             lines.append(f'- category MUST be "{constraints["force_category"]}"')
+        if "force_label" in constraints:
+            lines.append(f'- label MUST be exactly: "{constraints["force_label"]}"')
         if "force_measure_group" in constraints:
             lines.append(f'- measure_group MUST be exactly: "{constraints["force_measure_group"]}"')
+        if "force_measures_in" in constraints:
+            lines.append(f'- measures_in MUST be exactly this list (no extras, no missing): {json.dumps(constraints["force_measures_in"], ensure_ascii=False)}')
         if "force_measure" in constraints:
             lines.append(f'- measure MUST be exactly: "{constraints["force_measure"]}"')
         if "force_stat_type" in constraints:
@@ -194,3 +198,47 @@ def enforce_deterministic_measures(pred: dict, question: str, meta: dict) -> dic
 
     pred["query"] = q
     return pred
+
+def validate_against_metadata(obj: dict, meta: dict) -> tuple[bool, str]:
+    cat = obj.get("category")
+    q = obj.get("query")
+    if not isinstance(q, dict):
+        return False, "query_not_object"
+
+    if cat == "cell_lookup":
+        ok = (
+            q.get("label") in (meta.get("labels") or [])
+            and q.get("measure") in (meta.get("measures") or [])
+            and q.get("subject") in (meta.get("subjects") or [])
+            and q.get("stat_type") in (meta.get("stat_types") or [])
+        )
+        return (ok, "ok" if ok else "cell_lookup_value_not_in_metadata")
+
+    if cat in {"aggregation", "row_filter", "chart_request"}:
+        filters = q.get("filters") or {}
+        if not isinstance(filters, dict):
+            return False, "filters_not_object"
+
+        # basic membership
+        if filters.get("label") not in (meta.get("labels") or []):
+            return False, "label_not_in_metadata"
+        if filters.get("subject") not in (meta.get("subjects") or []):
+            return False, "subject_not_in_metadata"
+        if filters.get("stat_type") not in (meta.get("stat_types") or []):
+            return False, "stat_type_not_in_metadata"
+
+        # measures_in + measure_group consistency
+        measures_in = filters.get("measures_in")
+        if measures_in:
+            mg = q.get("measure_group")
+            groups = meta.get("measure_groups") or {}
+            if mg not in groups:
+                return False, "measure_group_not_in_metadata"
+            allowed = set(groups.get(mg) or [])
+            bad = [m for m in measures_in if m not in allowed]
+            if bad:
+                return False, f"measures_in_not_in_group:{bad}"
+
+        return True, "ok"
+
+    return True, "ok"
