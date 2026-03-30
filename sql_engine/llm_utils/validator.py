@@ -2,34 +2,63 @@ import json
 from typing import Dict, Any, Tuple, List, Optional
 from sql_engine.llm_utils.json_schema import SCHEMA_TEXT, FEWSHOT_TEXT
 from sql_engine.llm_utils.query_guards import OVER_HINT, UNDER_HINT, RANGE_HINT, age_under_measures_in, age_over_measures_in, measures_overlapping_range
-
+from sql_engine.llm_utils.json_schema import CATEGORY_SCHEMAS
 ALLOWED_STAT_TYPES = {"Estimate", "Margin of Error"}
 
-## need to be dynamic for deterministic logic
+# validator.py (or wherever SCHEMA_TEXT lives)
+
 def make_param_prompt(question: str, metadata: dict, constraints: Optional[Dict[str, Any]] = None) -> str:
     forced = ""
+
     if constraints:
-        # Keep this short & absolute
         lines = ["FORCED CONSTRAINTS (must follow exactly):"]
-        if "force_category" in constraints:
+
+        if constraints.get("force_category") is not None:
             lines.append(f'- category MUST be "{constraints["force_category"]}"')
-        if "force_label" in constraints:
+        if constraints.get("force_label") is not None:
             lines.append(f'- label MUST be exactly: "{constraints["force_label"]}"')
-        if "force_measure_group" in constraints:
+        if constraints.get("force_measure_group") is not None:
             lines.append(f'- measure_group MUST be exactly: "{constraints["force_measure_group"]}"')
-        if "force_measures_in" in constraints:
-            lines.append(f'- measures_in MUST be exactly this list (no extras, no missing): {json.dumps(constraints["force_measures_in"], ensure_ascii=False)}')
-        if "force_measure" in constraints:
+        if constraints.get("force_measures_in") is not None:
+            lines.append(
+                f'- measures_in MUST be exactly this list (no extras, no missing): '
+                f'{json.dumps(constraints["force_measures_in"], ensure_ascii=False)}'
+            )
+        if constraints.get("force_measure") is not None:
             lines.append(f'- measure MUST be exactly: "{constraints["force_measure"]}"')
-        if "force_stat_type" in constraints:
+        if constraints.get("force_stat_type") is not None:
             lines.append(f'- stat_type MUST be "{constraints["force_stat_type"]}"')
-        if "force_subject" in constraints:
+        if constraints.get("force_subject") is not None:
             lines.append(f'- subject MUST be exactly: "{constraints["force_subject"]}"')
-        forced = "\n".join(lines) + "\n\n"
+        if constraints.get("force_op") is not None:
+            lines.append(f'- op MUST be "{constraints["force_op"]}"')
+
+        # If only the header exists, don't include forced at all
+        forced = ("\n".join(lines) + "\n\n") if len(lines) > 1 else ""
+
+    # If force_category exists, show ONLY that schema to reduce nesting mistakes
+    forced_cat = constraints.get("force_category") if constraints else None
+    schema = SCHEMA_TEXT.strip()
+
+    if forced_cat in CATEGORY_SCHEMAS:
+        schema = (
+            SCHEMA_TEXT.strip()
+            + "\n\n"
+            + "ONLY USE THIS SCHEMA (because category is forced):\n"
+            + CATEGORY_SCHEMAS[forced_cat]
+        )
+
+    # Add explicit anti-nesting instruction (most important line)
+    anti_nesting = (
+        "\n\nANTI-NESTING RULE (critical):\n"
+        "- The value of top-level key \"query\" MUST be the INNER query object ONLY.\n"
+        "- Never put keys \"category\" or \"query\" inside the \"query\" object.\n"
+    )
 
     return (
         forced
-        + SCHEMA_TEXT.strip()
+        + schema
+        #+ anti_nesting
         + "\n\n"
         + FEWSHOT_TEXT.strip()
         + "\n\nQUESTION:\n"

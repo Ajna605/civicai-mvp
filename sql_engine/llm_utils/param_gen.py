@@ -123,6 +123,8 @@ def llm_make_params(
 
 
         # Hard-enforce any forced constraints (prevents invented strings).
+        print("RAW_OBJ_KEYS", obj.keys(), "QUERY_KEYS", getattr(obj.get("query"), "keys", lambda: None)())
+        print(constraints)
         obj = apply_forced_constraints(obj, constraints)
 
         # If model invented a cell_lookup field not in metadata, force a repair

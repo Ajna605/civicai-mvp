@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from collections import Counter, defaultdict
 from sql_engine.llm_utils.query_guards import resolve_measure_override
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
-from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures
+from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures, validate_cell_lookup
 
 DEFAULT_SUBJECT = "Total"
 DEFAULT_STAT_TYPE = "Estimate"
@@ -132,6 +132,10 @@ def main():
             rec["pred"] = pred
             
             pred_cat = pred.get("category")
+
+            if pred_cat == "cell_lookup":
+                validate_cell_lookup(pred, meta)
+
             pred_query = pred.get("query")
 
             # basic JSON/schema presence

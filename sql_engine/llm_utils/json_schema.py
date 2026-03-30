@@ -43,6 +43,7 @@ Rules:
 - Otherwise default stat_type="Estimate"
 - Use cell_lookup for a single direct measure.
 - Use aggregation, row_filter, or chart_request only when multiple measures are needed.
+- No null values in the schema. 
 """
 
 # Few-shot examples (you can expand later)
@@ -61,3 +62,10 @@ A: {"category":"chart_request","query":{"measure_group":"<EXACT measure_group>",
 Q: What is the total/average/min/max across several measures?
 A: {"category":"aggregation","query":{"measure_group":"<EXACT measure_group>","op":"sum","filters":{"label":"<EXACT label>","subject":"<EXACT subject>","stat_type":"Estimate","measures_in":["<EXACT measure 1>","<EXACT measure 2>"]}}}
  """
+
+CATEGORY_SCHEMAS = {
+    "cell_lookup": 'cell_lookup: {"category":"cell_lookup","query":{"label":"...","measure":"...","subject":"...","stat_type":"Estimate|Margin of Error"}}',
+    "aggregation": 'aggregation: {"category":"aggregation","query":{"measure_group":"...","op":"sum|avg|min|max|count","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]}}}',
+    "row_filter": 'row_filter: {"category":"row_filter","query":{"measure_group":"...","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]},"order":"asc|desc","limit":number}}',
+    "chart_request": 'chart_request: {"category":"chart_request","query":{"measure_group":"...","viz_type":"bar|pie|line|scatter","chart_type":"categorical|time_series|compare_labels","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]}, "x":"measure|year|label|geo","y":"value","sort":"x_asc|x_desc|y_asc|y_desc"}}',
+}

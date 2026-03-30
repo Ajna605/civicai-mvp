@@ -197,9 +197,6 @@ def extract_cell_lookup_slots(question: str, meta: dict, threshold: float = 0.55
 
     if not measure:
         return None
-    
-    print("label", "measure", "subject", "stat_type")
-    print(label, measure, subject, stat_type)
 
     return {
         "label": label,
@@ -292,7 +289,7 @@ def direct_measure_first_guard(
     return {
         "force_category": "cell_lookup",
         "force_query": slots,
-        "score": 1.0,
+        "direct_measure_score": 1.0,
         "reason": "direct_measure_match",
     }
 
@@ -611,7 +608,7 @@ def measure_group_guard(question: str, meta: dict, threshold: float = 0.75, marg
 
     return {
         "force_measure_group": best_group,
-        "score": best_score,
+        "measure_group_score": best_score,
         "reason": "measure_group_match",
     }
 
@@ -659,19 +656,17 @@ def direct_subject_first_guard(
 
     return {
         "force_subject": subject,
-        "score": score,
+        "subject_score": score,
         "reason": "direct_subject_match(best_typed_matches)",
     }
 
 
 def chart_intent_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
-    print("CHART INTENT GUARD")
     q = (question or "").strip()
     if not q:
         return None
     # Strong signals for chart_request
     if CHART_HINT.search(q) or BREAKDOWN_HINT.search(q):
-        print("INSIDEEEE")
         return {
             "force_category": "chart_request",
             "reason": "chart_or_breakdown_intent",
@@ -691,18 +686,50 @@ GUARDS = [
     direct_measure_first_guard,  # fallback: single direct measure -> cell_lookup
 ]
 
+
+def merge_constraints(
+    merged: Optional[dict],
+    override: dict,
+    guard_name: str,
+) -> dict:
+    merged = merged or {}
+
+    # reasons list
+    merged.setdefault("reasons", [])
+    reason = override.get("reason")
+    if reason:
+        merged["reasons"].append(f"{guard_name}:{reason}")
+
+    # optional debug payload (keeps scores etc. without clobber)
+    merged.setdefault("debug", {})
+    merged["debug"][guard_name] = {k: v for k, v in override.items() if k != "reason"}
+
+    # merge force_* keys (default: first-wins to avoid late guards clobbering category)
+    for k, v in override.items():
+        if k in {"reason", "score"}:
+            continue
+        if not k.startswith("force_"):
+            continue
+
+        # first wins to preserve earlier "shape" decisions
+        if k not in merged:
+            merged[k] = v
+
+    # If you *want* some keys to be last-wins (e.g., force_measures_in from under-range should override),
+    # you can allowlist them:
+    LAST_WINS = {"force_measures_in", "force_measure", "force_measure_group"}
+    for k in LAST_WINS:
+        if k in override:
+            merged[k] = override[k]
+
+    return merged
+
 ## Merges guard results - some with precedence
-def resolve_measure_override(question: str, meta: dict) -> Optional[Dict[str, Any]]:
-    """
-    Run all guards and MERGE their constraints.
-    Later guards win if they set the same key.
-    """
-    merged: Dict[str, Any] = {}
-    any_hit = False
+def resolve_measure_override(question: str, meta: dict) -> Optional[dict]:
+    merged = None
     for guard in GUARDS:
         override = guard(question, meta)
         if not override:
             continue
-        any_hit = True
-        merged.update(override)
-    return merged if any_hit else None
+        merged = merge_constraints(merged, override, guard.__name__)
+    return merged
