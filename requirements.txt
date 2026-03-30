@@ -141,3 +141,8 @@ urllib3==2.6.3
 uvicorn==0.40.0
 wrapt==1.17.3
 yarl==1.22.0
+# Analytics / visualization
+matplotlib>=3.7.0
+plotly>=5.0.0
+kaleido>=0.2.1
+
