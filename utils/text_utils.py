@@ -83,3 +83,36 @@ def infer_table_name(path: Path) -> str:
         stem = f"t_{stem}"
 
     return f"{stem}_facts"
+
+## CSV jsonl fields condensed for indexing
+def csv_record_to_text(rec: dict) -> str:
+    label = rec.get("label") or rec.get("geo") or ""
+    measure = rec.get("measure") or ""
+    subject = rec.get("subject") or ""
+    stat_type = rec.get("stat_type") or ""
+    year = rec.get("year")
+    year_str = f"{year}" if year not in (None, "", "null") else ""
+
+    raw_value = rec.get("raw_value")
+    value = rec.get("value")
+    value_str = ""
+    if raw_value not in (None, "", "null"):
+        value_str = str(raw_value)
+    elif value not in (None, "", "null"):
+        value_str = str(value)
+
+    raw_row = rec.get("raw_row") or ""
+    raw_col = rec.get("raw_col") or ""
+
+    # Keep it short but information-dense
+    parts = [
+        f"Location: {label}" if label else None,
+        f"Measure: {measure}" if measure else None,
+        f"Subject: {subject}" if subject else None,
+        f"Stat: {stat_type}" if stat_type else None,
+        f"Year: {year_str}" if year_str else None,
+        f"Value: {value_str}" if value_str else None,
+        f"Row: {raw_row}" if raw_row else None,
+        f"Column: {raw_col}" if raw_col else None,
+    ]
+    return " | ".join([p for p in parts if p])

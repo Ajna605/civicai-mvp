@@ -2,9 +2,8 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
-TABLE = "facts"  # change if needed
 
-def cell_lookup_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
+def cell_lookup_sql(q: Dict[str, Any], table_name: str) -> Tuple[str, List[Any]]:
     where = ["label = ?", "measure = ?"]
     params: List[Any] = [q["label"], q["measure"]]
 
@@ -22,7 +21,7 @@ def cell_lookup_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
 
     sql = f"""
       SELECT value, source_file, row_id
-      FROM {TABLE}
+      FROM {table_name}
       WHERE {" AND ".join(where)}
       ORDER BY
         (year IS NULL) ASC, year DESC NULLS LAST,
@@ -31,7 +30,7 @@ def cell_lookup_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
     """
     return sql, params
 
-def aggregation_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
+def aggregation_sql(q: Dict[str, Any], table_name: str) -> Tuple[str, List[Any]]:
     op = q.get("op", "").upper()
 
     if op not in {"SUM", "AVG", "MIN", "MAX", "COUNT"}:
@@ -80,7 +79,7 @@ def aggregation_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
             SELECT
                 COUNT(*) AS value,
                 COUNT(*) AS n
-            FROM {TABLE}
+            FROM {table_name}
             WHERE {where_clause};
         """
     else:
@@ -88,7 +87,7 @@ def aggregation_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
             SELECT
                 {op}(value) AS value,
                 COUNT(*) AS n
-            FROM {TABLE}
+            FROM {table_name}
             WHERE {where_clause};
         """
 
@@ -98,7 +97,7 @@ def aggregation_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
 ALLOWED_ORDER = {"ASC", "DESC"}
 ALLOWED_SELECT = {"row", "compact"}
 
-def row_filter_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
+def row_filter_sql(q: Dict[str, Any], table_name: str) -> Tuple[str, List[Any]]:
     order = (q.get("order") or "DESC").upper()
     if order not in ALLOWED_ORDER:
         raise ValueError("order must be ASC or DESC")
@@ -153,7 +152,7 @@ def row_filter_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
     sql = f"""
         SELECT
             label,  measure,  value,  source_file,  row_id
-        FROM {TABLE}
+        FROM {table_name}
         WHERE {where_clause}
         ORDER BY
             value {order},
@@ -168,12 +167,10 @@ def row_filter_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
     """
     return sql, params
 
-from typing import Any, Dict, List, Tuple
-
 ALLOWED_CHART_TYPES = {"categorical", "time_series", "compare_labels"}
 ALLOWED_SORT = {"x_asc", "x_desc", "y_asc", "y_desc"}
 
-def chart_request_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
+def chart_request_sql(q: Dict[str, Any], table_name: str) -> Tuple[str, List[Any]]:
     chart_type = (q.get("chart_type") or "").lower()
     if chart_type not in ALLOWED_CHART_TYPES:
         raise ValueError(f"chart_type must be one of {sorted(ALLOWED_CHART_TYPES)}")
@@ -256,7 +253,7 @@ def chart_request_sql(q: Dict[str, Any]) -> Tuple[str, List[Any]]:
             value AS y,
             source_file,
             row_id
-        FROM {TABLE}
+        FROM {table_name}
         WHERE {where_clause}
         ORDER BY {order_by}
         LIMIT {limit}

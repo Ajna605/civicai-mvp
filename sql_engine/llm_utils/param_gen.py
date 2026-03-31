@@ -12,14 +12,12 @@ from copy import deepcopy
 import time
 
 
-def load_metadata(path: str | None = None) -> dict:
-    # If no path passed, load metadata.json that sits next to this file (llm_utils/)
-    
-    if path is None:
-        path = str(Path(__file__).resolve().parent / "metadata.json")
-
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def load_metadata(table_name: str) -> Dict[str, Any]:
+    metadata_dir = Path("storage/metadata").expanduser().resolve()
+    path = metadata_dir / f"{table_name}_metadata.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing metadata for table '{table_name}': {path}")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 PARAM_LLM = build_param_llm()
 print(PARAM_LLM._model.device)
@@ -123,8 +121,6 @@ def llm_make_params(
 
 
         # Hard-enforce any forced constraints (prevents invented strings).
-        print("RAW_OBJ_KEYS", obj.keys(), "QUERY_KEYS", getattr(obj.get("query"), "keys", lambda: None)())
-        print(constraints)
         obj = apply_forced_constraints(obj, constraints)
 
         # If model invented a cell_lookup field not in metadata, force a repair

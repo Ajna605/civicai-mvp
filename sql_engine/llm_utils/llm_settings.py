@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 from llama_index.llms.huggingface import HuggingFaceLLM
+import json
 
 @dataclass
 class ParamLLMConfig:
@@ -9,7 +10,6 @@ class ParamLLMConfig:
     # model_name: str = "Qwen/Qwen2.5-3B-Instruct"  # for faster run
     context_window: int = 8192
     max_new_tokens: int = 300
-
 
 
 def build_param_llm(cfg: Optional[ParamLLMConfig] = None) -> HuggingFaceLLM:
@@ -33,3 +33,43 @@ def generate_json_only(llm: HuggingFaceLLM, prompt: str) -> str:
     resp = llm.complete(prompt)
     text = getattr(resp, "text", str(resp))
     return text.strip()
+
+@dataclass
+class AnswerLLMConfig:
+    model_name: str = "Qwen/Qwen2.5-7B-Instruct"
+    context_window: int = 8192
+    max_new_tokens: int = 160  # shorter than params is fine too
+
+def build_answer_llm(cfg: Optional[AnswerLLMConfig] = None) -> HuggingFaceLLM:
+    cfg = cfg or AnswerLLMConfig()
+    return HuggingFaceLLM(
+        model_name=cfg.model_name,
+        tokenizer_name=cfg.model_name,
+        context_window=cfg.context_window,
+        max_new_tokens=cfg.max_new_tokens,
+        generate_kwargs={"do_sample": False},
+        model_kwargs={"torch_dtype": "auto"},
+    )
+
+
+def llm_verbalize_answer(llm: HuggingFaceLLM, fact_pack: dict) -> str:
+    prompt = f"""
+You are an assistant that turns database query results into a concise answer.
+
+Rules:
+- Use ONLY facts from FACT_PACK_JSON.
+- Do NOT add new numbers, comparisons, or explanations.
+- Do NOT mention SQL, "limit", "top_k", or implementation details.
+- If FACT_PACK_JSON contains a numeric value, include it exactly.
+- Output 1-2 sentences.
+
+User question:
+{fact_pack["query"]}
+
+FACT_PACK_JSON:
+{json.dumps(fact_pack, ensure_ascii=False)}
+""".strip()
+
+    resp = llm.complete(prompt)
+    text = getattr(resp, "text", str(resp)).strip()
+    return text

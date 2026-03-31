@@ -7,7 +7,7 @@ from sql_engine.duckdb_loader import build_duckdb
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--db", required=True)
-    p.add_argument("--rebuild", action="store_true")
+    p.add_argument("--rebuild", default=True)
     p.add_argument("--table_name", required=False)
     return p.parse_args()
 
