@@ -28,14 +28,14 @@ from collections import Counter, defaultdict
 from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup
 from utils.text_utils import normalize, contains_all, contains_any, load_tests
 from rag.retrieval.table_rerank import table_aware_retrieve, rerank_table_and_doc_hits, select_locked_table_ids, debug_ranked_nodes
-
+# from rag.query_engine import is_lookup_question
+from rag.retrieval.policy_lookup import extract_code_from_query
 
 # -----------------------------
 # Arguments
 # -----------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # adjust if needed
 DEFAULT_BASE = PROJECT_ROOT / "storage" / "index"
-
 
 # -----------------------------
 # Index + retrieval
@@ -326,27 +326,6 @@ def select_diag_node_summary(retrieved_nodes_k: List[Any], expected: Dict[str, A
         if is_relevant_summary(safe_node_text(r), expected):
             return r
     return retrieved_nodes_k[0]
-
-## getting block_type and caption from node
-# def build_eval_text(txt: str, md: dict) -> str:
-#     parts = [txt]
-
-#     if isinstance(md, dict):
-#         if md.get("block_type"):
-#             parts.append(str(md["block_type"]))
-
-#         section_path = md.get("section_path")
-#         if isinstance(section_path, list):
-#             parts.append(" > ".join(str(x) for x in section_path))
-
-#         if md.get("caption"):
-#             parts.append(str(md["caption"]))
-
-#         header_terms = md.get("header_terms")
-#         if isinstance(header_terms, list):
-#             parts.append(" ".join(str(x) for x in header_terms))
-
-#     return " ".join(p for p in parts if p).strip()
 
 
 def evaluate_one(
@@ -720,8 +699,8 @@ def print_gate_checks(overall_pass: bool, checks: List[Dict[str, Any]]):
 # -----------------------------
 # Main
 # -----------------------------
-from rag.query_engine import is_lookup_question
-from rag.retrieval.policy_lookup import extract_code_from_query
+
+import sys
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tests", default="test_questions.json")
@@ -731,7 +710,7 @@ def main():
     ap.add_argument("--out_dir", default="eval_outputs")
     ap.add_argument("--fail_on_gate", action="store_true", help="Exit nonzero if acceptance criteria fail")
     ap.add_argument("--format", default="docx", required = True)
-    ap.add_argument("--table_index", type=bool, default="True", required = False)
+    ap.add_argument("--table_index", action="store_true", help="False flag unless provided")
 
     args = ap.parse_args()
 
@@ -748,6 +727,7 @@ def main():
     if args.table_index:
         try:
             table_index = get_index(f"{args.format}_tables")
+            print(f"Table Index loaded from {args.format}_tables")
         except Exception as e:
             print(f"[eval_runner_doc] Warning: could not load table index '{args.table_index}': {e}")
             table_index = None
@@ -755,7 +735,8 @@ def main():
     results: List[Dict[str, Any]] = []
     code_map = build_code_map_from_index(doc_index)
 
-    for t in tests:
+
+    for t in tests:       
         q = t.get("question", "")
         print(q)
         # if t.get("category") == "policy_lookup":
@@ -790,9 +771,8 @@ def main():
         #     retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
 
         ## New try:
-        if is_lookup_question(q):
-            # Use deterministic code lookup when possible
-            code = extract_code_from_query(q)
+        code = extract_code_from_query(q)
+        if code:
             retrieved = retrieve_policy_lookup(
                 doc_index,
                 q,
@@ -802,7 +782,7 @@ def main():
             )
 
             if not retrieved:
-                return {"answer": "No relevant context retrieved.", "references": []}
+                retrieved = []
     
         else:
             retrieved = table_aware_retrieve(

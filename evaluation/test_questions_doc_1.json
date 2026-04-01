@@ -1,5 +1,4 @@
-[
-  {
+ [{
     "id": "Q4.2",
     "question": "Does the Coral Gables plan specify maximum housing density?",
     "category": "table_lookup",
@@ -82,6 +81,45 @@
       "should_not_mention": []
     },
     "notes": "Tricky table set up"
-  }]
+  },
+  {
+    "id": "Q5",
+    "question": "Out of residential, retail, office and industrial use which has the maximum % FAR?",
+    "category": "aggregation",
+    "expected": {
+      "must_mention_all": [],
+      "must_mention_any": ["Residential", "Office"],
+      "should_mention": ["85%"],
+      "should_not_mention": []
+    },
+    "notes": "Column trend"
+  },
+  {
+    "id": "Q5.1",
+    "question": "What is the maximum height allowed for commercial land use?",
+    "category": "aggregation",
+    "expected": {
+      "must_mention_all": ["Up to 150’ maximum "],
+      "must_mention_any": [],
+      "should_mention": ["Commercial High-Rise Intensity"],
+      "should_not_mention": []
+    },
+    "notes": "Row comparison"
+  },
+ 
+  {
+    "id": "Q5.2",
+    "question": "What is the service radius in miles added together for different recreation facilities?",
+    "category": "aggregation",
+    "expected": {
+      "must_mention_all": ["26.25"],
+      "must_mention_any": [],
+      "should_mention": [],
+      "should_not_mention": []
+    },
+    "notes": "Arithmetic reasoning",
+    "known_issue": true
+  }
+]
 
 

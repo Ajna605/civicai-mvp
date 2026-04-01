@@ -3,10 +3,19 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
+def norm_text(s: str) -> str:
+    return " ".join((s or "").lower().split())
+
+_DOTTED_ACRONYM_RE = re.compile(r"\b([A-Za-z])(?:\.[A-Za-z])+\.\b|\b([A-Za-z])(?:\.[A-Za-z])+\b")
+def normalize_dotted_acronyms(s: str) -> str:
+    # Turns "F.A.R" or "F.A.R." into "FAR"
+    def repl(m):
+        txt = m.group(0)
+        return txt.replace(".", "")
+    return _DOTTED_ACRONYM_RE.sub(repl, s or "")
 
 def unwrap_node(node_like: Any) -> Any:
     return getattr(node_like, "node", node_like)
-
 
 def safe_node_text(node_like: Any) -> str:
     node = unwrap_node(node_like)
@@ -76,12 +85,8 @@ STOP_WORDS = {
     "about",
 }
 
-
-def norm_text(s: str) -> str:
-    return " ".join((s or "").lower().split())
-
-
 def tokenize(s: str) -> List[str]:
+    s = normalize_dotted_acronyms((s or "").lower())
     toks = _WORD_RE.findall((s or "").lower())
     return [t for t in toks if t not in STOP_WORDS and len(t) > 1]
 
@@ -91,7 +96,7 @@ def token_set(s: str) -> set[str]:
 
 
 def extract_query_phrases(question: str) -> List[str]:
-    q = norm_text(question)
+    q = norm_text(normalize_dotted_acronyms(question))
     if not q:
         return []
 
@@ -120,6 +125,7 @@ def extract_query_phrases(question: str) -> List[str]:
         if p not in seen:
             seen.add(p)
             out.append(p)
+
     return out
 
 
@@ -159,16 +165,6 @@ def numeric_overlap_score(question: str, text: str) -> float:
     if not q_nums or not t_nums:
         return 0.0
     return 2.0 * float(len(q_nums & t_nums))
-
-
-def looks_table_like_question(question: str) -> bool:
-    q = norm_text(question)
-    cues = [
-        "table", "row", "column", "matrix", "schedule", "standard",
-        "radius", "density", "acre", "units/acre", "fee", "fees",
-        "mileage", "park type", "service radius", "land use",
-    ]
-    return any(c in q for c in cues)
 
 
 def node_block_type(node_like: Any) -> Optional[str]:
@@ -336,29 +332,58 @@ def deterministic_rerank_score(
 
     text = build_scoring_text(node_like)
 
-    score = 0.0
-    score += exact_substring_score(question, text)
-    score += token_overlap_score(question, text)
-    score += numeric_overlap_score(question, text)
+    substr = exact_substring_score(question, text)      # phrase matches
+    overlap = token_overlap_score(question, text)       # keyword overlap
+    nums = numeric_overlap_score(question, text)        # numbers
+    score = substr + overlap + nums
+
+    has_phrase = substr >= 3.0
+    has_strong_overlap = overlap >= 2.5   # tuneable
+    has_numbers = nums > 0.0
+
+    bt = md.get("block_type")
 
     if bt == "table_row":
-        score += 8.0
-    elif bt == "table_summary":
-        score += 3.0
-    elif bt == "section_text":
-        score += 2.0
-
-    if locked_set:
-        if tid in locked_set:
-            if bt == "table_row":
-                score += 8.0
-            elif bt == "table_summary":
-                score += 3.0
+        # Only prefer rows when they actually match the query
+        if has_phrase or has_numbers:
+            score += 4.0
+        elif has_strong_overlap:
+            score += 2.0
         else:
-            if bt == "table_row":
-                score -= 4.0
-            elif bt == "table_summary":
-                score -= 2.0
+            score -= 2.0
+
+    elif bt == "table_summary":
+        if has_phrase:
+            score += 2.5
+        elif has_strong_overlap:
+            score += 1.5
+        else:
+            score -= 0.5
+
+    elif bt == "section_text":
+        # Sections should not win on weak overlap alone
+        if has_phrase:
+            score += 2.0
+        elif has_strong_overlap:
+            score += 1.0
+        else:
+            score += 0.0
+
+    if locked_set and bt in {"table_row", "table_summary"}:
+        in_locked = (tid in locked_set)
+
+        # Evidence tiers
+        strong = has_phrase or (nums > 0.0)
+        medium = overlap >= 2.5   # choose a threshold, not just > 0
+
+        if strong:
+            # Strongly prefer locked table, but only mildly penalize others
+            score += (2.0 if bt == "table_row" else 1.0) if in_locked else -0.5
+        elif medium:
+            # Mild preference for staying in the locked table
+            if in_locked:
+                score += 0.75
+        # else: no lock effect at all
 
     return score
 
@@ -404,7 +429,6 @@ def select_locked_table_ids(doc_nodes: Sequence[Any]) -> List[str]:
 
     if not found:
         return []
-
     # strictest behavior: lock to first candidate only
     return [found[0]]
 
@@ -417,6 +441,7 @@ def merge_with_table_rows(
     top_k_rows: int = 10,
     final_top_k: Optional[int] = None,
 ) -> List[Any]:
+
     doc_nodes = list(retrieved_nodes)
 
     # If no row index exists, just return doc nodes.
@@ -443,7 +468,6 @@ def merge_with_table_rows(
         final_top_k=final_top_k,
         locked_table_ids=locked_table_ids,
     )
-
 
 def table_aware_retrieve(
     question: str,

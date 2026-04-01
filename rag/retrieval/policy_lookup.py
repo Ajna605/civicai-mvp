@@ -17,10 +17,6 @@ def tokenize_keywords(text: str) -> List[str]:
     toks = WORD_RE.findall((text or "").lower())
     return [t for t in toks if t not in STOP_WORDS and len(t) > 2]
 
-def tokenize_keywords(text: str) -> List[str]:
-    toks = WORD_RE.findall((text or "").lower())
-    return [t for t in toks if t not in STOP_WORDS and len(t) > 2]
-
 def norm_code(c: str) -> str:
     return c.rstrip(".").strip()
 
@@ -101,7 +97,6 @@ def policy_keyword_bonus(query: str, node_like: Any) -> float:
 
     return score
 
-    return score
 
 def retrieve_policy_lookup(
     index: Any,

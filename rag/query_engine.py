@@ -3,7 +3,6 @@ import re
 from .build_index import load_index
 from .retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup, extract_code_from_query, norm_code
 
-
 STOPWORDS = {
     "the","a","an","and","or","to","of","in","on","for","with","about","what","does","say",
     "document","policy","section","clause","article","chapter","table","figure","regarding"
@@ -52,9 +51,15 @@ def ref_from(node) -> dict:
         "snippet": " ".join(txt.split())[:220] + ("…" if len(txt) > 220 else ""),
     }
 
+def get_retrieved_nodes(index, query: str, top_k: int):
+    retriever = index.as_retriever(similarity_top_k=top_k)
+    return retriever.retrieve(query)
+
+TOP_K = 5
 def query_civicai(query: str, index_path:str):
     index = load_index(index_path)
     code_map = build_code_map_from_index(index)
+
     query_engine = index.as_query_engine(similarity_top_k=3, response_mode="compact")
     response = query_engine.query(query)
 
@@ -79,15 +84,18 @@ def query_civicai(query: str, index_path:str):
 
         if not retrieved:
             return {"answer": "No relevant context retrieved.", "references": []}
+    
+    else:
+        retrieved = get_retrieved_nodes(index, query, top_k=TOP_K)
 
-        best = retrieved[0].node
-        best_text = best.get_text() if hasattr(best, "get_text") else str(best)
+    #     best = retrieved[0].node
+    #     best_text = best.get_text() if hasattr(best, "get_text") else str(best)
 
-        # If we found a code, anchor snippet around it; else keep your old token heuristic
-        anchor = code or (extract_rare_tokens(query)[0] if extract_rare_tokens(query) else "")
-        ans = snippet_around(best_text, anchor) if anchor else " ".join(best_text.split())[:260]
+    #     # If we found a code, anchor snippet around it; else keep your old token heuristic
+    #     anchor = code or (extract_rare_tokens(query)[0] if extract_rare_tokens(query) else "")
+    #     ans = snippet_around(best_text, anchor) if anchor else " ".join(best_text.split())[:260]
 
-        return {"answer": ans, "references": [ref_from(best)]}
+    #     return {"answer": ans, "references": [ref_from(best)]}
 
 
     # THEMATIC / GENERAL MODE (simple for now)

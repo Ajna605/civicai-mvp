@@ -94,6 +94,11 @@ def build_index(jsonl_path: Path, index_dir: Path, kind: str = "doc"):
                         meta.update(rec["extra"])
 
                 elif kind == "row":
+                    if rec.get("table_index") == None:
+                        print("table_id", rec.get("table_id"))
+                        print("table_index", rec.get("table_index"), )
+                        print("None")
+                        return 0
                     text = (rec.get("search_text") or "").strip()
                     if not text:
                         continue
@@ -164,7 +169,7 @@ def main():
     table_rows_path = base / args.source / "doc_tables" / "table_rows.jsonl"   
 
     doc_index_dir = Path(PROJECT_ROOT / "storage/index" / args.source)
-    row_index_dir = Path(PROJECT_ROOT / f"storage/index/{args.source}_tables")
+    row_index_dir = Path(PROJECT_ROOT / f"storage/index/{args.source}_tables") # for csv only 
 
     if row_index_dir.exists():
         shutil.rmtree(row_index_dir)
@@ -175,13 +180,13 @@ def main():
     if not rag_chunks_path.exists():
         raise FileNotFoundError(f"Missing {rag_chunks_path}. Run build_corpus first.")
     ## Checks if table rows file exists - to create separate index
-    if args.source == "doc":
+    if args.source == "docx" or "pdf":
         print(f"[build_index] Loading chunks from: {rag_chunks_path}")
         print(f"[build_index] Persisting index to: {doc_index_dir}")
         # Only build from rag_chunks for documents
         build_index(rag_chunks_path/"rag_chunks.jsonl", doc_index_dir, kind = "doc")
         print("[build_index] Done.")
-    elif table_rows_path.exists():
+    if table_rows_path.exists():
         # Only build from table_rows for table index
         print(f"[build_index] Loading chunks from: {table_rows_path}")
         print(f"[build_index] Persisting index to: {row_index_dir}")
