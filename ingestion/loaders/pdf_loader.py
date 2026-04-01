@@ -99,7 +99,6 @@ def _extract_page_tables_pymupdf(
             continue
 
         headers, body = _split_headers_and_rows(rows)
-        print("header", headers)
         if not headers and not body:
             continue
 
@@ -150,6 +149,7 @@ def _extract_page_tables_pdfplumber(
         # pdfplumber is useful for detailed PDF table extraction and visual debugging. :contentReference[oaicite:2]{index=2}
         try:
             tables = page.find_tables()
+
         except Exception:
             tables = []
 
@@ -168,7 +168,6 @@ def _extract_page_tables_pdfplumber(
 
             caption_from_row, rows = _pop_caption_row(rows)
             headers, body = _split_headers_and_rows(rows)
-            # print("HEADER", headers)
             bbox = _normalize_bbox(getattr(table, "bbox", None))
             caption = caption_from_row or _find_caption_for_bbox_pdfplumber(text_lines, bbox)
             table_id, table_title = _split_caption(caption)

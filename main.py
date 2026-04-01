@@ -38,12 +38,13 @@ if __name__ == "__main__":
     # q = "What are the residential density limits in the coastal area east of Old Cutler Road"
     # q = "What is the restriction in regard to residential development throughout the coastal area of East of Old Cutler Road?"
     # q =  "What is in the table showing Recreation facilities radius standard?"
-    # q = "Does the Coral Gables plan specify housing density limits?"
+    q = "Does the Coral Gables plan specify housing density limits?"
 
     ## Insurance Questions
     # q = "What is the number of insured people in Coral Gables under 64 years?" # aggregation
+    # q = "Show how disability affects the percent of people insured" # chart
     ## Demographic Questions
-    q = "How many males per 100 females?" # cell_lookup works
+    # q = "How many males per 100 females?" # cell_lookup works
     # q = "What is the population under 24 years in Coral Gables?" # aggregation works
     # q = "What age range is most prominent in Coral Gables?" # row_filter #works
     # q = "Create a bar chart of age groups vs total population." # chart_request # works

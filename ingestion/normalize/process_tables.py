@@ -139,6 +139,7 @@ def normalize_extracted_tables(raw_tables, path, source_type):
         rows = tbl.get("rows", []) or []
 
         table_title = tbl.get("caption")
+
         header_terms = tbl.get("headers", []) or tbl.get("header_terms", []) or []
         data_rows = rows
 
@@ -173,10 +174,10 @@ def normalize_extracted_tables(raw_tables, path, source_type):
             search_parts.append(" | ".join(x for x in row if x))
 
         normalized.append({
-            "table_id": f"{path.stem}__tbl_{tbl.get('table_index', 0)}",
+            "table_id":(tbl.get("table_id") or table_title or "").strip(),
             "source_file": str(path),
             "source_type": source_type,
-            "table_index": tbl.get("table_index", 0),
+            "table_index": tbl.get("table_idx", 0),
             "section_path": section_path,
             "caption": table_title,
             "preceding_text": preceding_text,
@@ -197,7 +198,6 @@ def normalize_table_rows(table_record: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Convert one normalized table record into lean row-level records.
     """
-
     table_id = table_record.get("table_id")
     source_file = table_record.get("source_file")
     source_type = table_record.get("source_type")

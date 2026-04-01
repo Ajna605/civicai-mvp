@@ -720,7 +720,8 @@ def print_gate_checks(overall_pass: bool, checks: List[Dict[str, Any]]):
 # -----------------------------
 # Main
 # -----------------------------
-
+from rag.query_engine import is_lookup_question
+from rag.retrieval.policy_lookup import extract_code_from_query
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tests", default="test_questions.json")
@@ -765,17 +766,45 @@ def main():
         #         top_k_retrieve=args.top_k_retrieve, # pool
         #         code_map=code_map,
         #     )
+
         ## Not mixing categories for EVALUATION
         ######################################
-        if t.get("category") == "policy_lookup":
+        # if t.get("category") == "policy_lookup":
+        #     retrieved = retrieve_policy_lookup(
+        #         doc_index,
+        #         q,
+        #         k_eval=args.k_eval,
+        #         top_k_retrieve=args.top_k_retrieve,
+        #         code_map=code_map,
+        #     )
+        # elif t.get("category") == "table_lookup" and table_index is not None:
+        #     retrieved = table_aware_retrieve(
+        #         question=q,
+        #         doc_index=doc_index,
+        #         row_index=table_index,
+        #         top_k_docs=args.top_k_retrieve,
+        #         top_k_rows=20,
+        #         final_top_k=args.top_k_retrieve,
+        #     )
+        # else:
+        #     retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
+
+        ## New try:
+        if is_lookup_question(q):
+            # Use deterministic code lookup when possible
+            code = extract_code_from_query(q)
             retrieved = retrieve_policy_lookup(
                 doc_index,
                 q,
-                k_eval=args.k_eval,
-                top_k_retrieve=args.top_k_retrieve,
+                k_eval=1,                 # we only need best for lookup answer
+                top_k_retrieve=30,
                 code_map=code_map,
             )
-        elif t.get("category") == "table_lookup" and table_index is not None:
+
+            if not retrieved:
+                return {"answer": "No relevant context retrieved.", "references": []}
+    
+        else:
             retrieved = table_aware_retrieve(
                 question=q,
                 doc_index=doc_index,
@@ -784,8 +813,6 @@ def main():
                 top_k_rows=20,
                 final_top_k=args.top_k_retrieve,
             )
-        else:
-            retrieved = get_retrieved_nodes(doc_index, q, top_k=args.top_k_retrieve)
         ######################################
         # else:
         #     # plain doc retrieval if no table index exists

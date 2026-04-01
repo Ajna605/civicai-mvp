@@ -9,6 +9,7 @@ from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
 from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures, validate_cell_lookup
 from sql_engine.llm_utils.llm_settings import build_answer_llm, llm_verbalize_answer
 from sql_engine import sql_templates as T
+from analytics.runtime import AnalyticsRuntime
 
 TOP_K = 20
 TOP_TABLES = 3
@@ -124,8 +125,8 @@ def query_sql(query: str, index_path:str):
         print("[table_router] No table candidates found.")
         return
 
-    for i, r in enumerate(ranked, 1):
-        print(f"  {i}. {r.table}  hits={r.hits}  score_sum={r.score_sum:.4f}  avg={r.avg:.4f}")
+    # for i, r in enumerate(ranked, 1):
+    #     print(f"  {i}. {r.table}  hits={r.hits}  score_sum={r.score_sum:.4f}  avg={r.avg:.4f}")
     
     table_name = ranked[0].table
     meta = load_metadata(table_name)
@@ -170,6 +171,9 @@ def query_sql(query: str, index_path:str):
             rec["failure_type"] = "exception"
 
     result = run_structured_query(DUCKDB_PATH, pred["category"], pred["query"], table_name)
+    # print("result", result)
+    runtime = AnalyticsRuntime(out_dir="storage/charts")
+    chart_result = runtime.render_from_result(result)
 
     answer = llm_verbalize_answer(ANS_LLM, result)
     return {"answer": answer}

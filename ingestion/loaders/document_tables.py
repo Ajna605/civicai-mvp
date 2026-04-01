@@ -105,7 +105,6 @@ def extract_pdf_tables(path: Path) -> list[dict]:
                 raw_tables.append(t)
     finally:
         doc.close()
-
     return raw_tables
 
 def extract_tables_for_source(path, source_type):
