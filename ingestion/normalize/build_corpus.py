@@ -244,7 +244,8 @@ def main() -> None:
 
     print(f"[build_corpus] Source={args.source}")
     print(f"[build_corpus] Read {total_sections} sections from {sections_file}")
-    print(f"[build_corpus] Wrote {total_chunks + total_table_chunks + total_image_chunks} chunks → {chunks_file}")
+    total_all_chunks = total_chunks + total_table_chunks + total_image_chunks
+    print(f"[build_corpus] Wrote {total_all_chunks} chunks → {chunks_file}")
     print(f"[build_corpus] Included {total_table_chunks} table summary chunks from {tables_file}")
     if total_image_chunks:
         print(f"[build_corpus] Included {total_image_chunks} image description chunks from {images_file}")

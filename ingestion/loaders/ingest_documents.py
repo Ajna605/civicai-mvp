@@ -32,8 +32,8 @@ def parse_args():
         "--vision",
         action="store_true",
         help=(
-            "Extract and interpret images from PDF files using the OpenAI Vision API. "
-            "Requires OPENAI_API_KEY to be set. Only applies when --source pdf."
+            "Extract and interpret images using the OpenAI Vision API. "
+            "Requires OPENAI_API_KEY to be set. Supported for --source pdf and docx."
         ),
     )
     return p.parse_args()
@@ -346,10 +346,12 @@ def main() -> None:
     print(f"[ingest_documents] Wrote {total_table_facts} table facts → {table_out_path}")
     print(f"[ingest_documents] Wrote {total_rows} table facts → {row_out_path}")
 
-    # Optional: extract and interpret images from PDF files
+    # Optional: extract and interpret images from PDF and DOCX files
     if args.vision:
-        if args.source != "pdf":
-            print("[ingest_documents] --vision is only supported for --source pdf; skipping.")
+        if args.source not in ("pdf", "docx"):
+            print(
+                f"[ingest_documents] --vision is not supported for --source {args.source}; skipping."
+            )
         else:
             from vision.pipeline import run_vision_pipeline_to_jsonl
 
