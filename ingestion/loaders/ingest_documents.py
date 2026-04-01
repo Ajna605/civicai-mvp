@@ -28,6 +28,14 @@ def parse_args():
     p.add_argument("--source", choices=["pdf", "docx", "csv"], required=True)
     p.add_argument("--input", help="Path to the document", required= False)
     p.add_argument("--out-blocks", default=None, help="sections.jsonl output path")
+    p.add_argument(
+        "--vision",
+        action="store_true",
+        help=(
+            "Extract and interpret images from PDF files using the OpenAI Vision API. "
+            "Requires OPENAI_API_KEY to be set. Only applies when --source pdf."
+        ),
+    )
     return p.parse_args()
 
 def default_out_for(source: str) -> Path:
@@ -337,6 +345,25 @@ def main() -> None:
     print(f"[ingest_documents] Wrote {total_blocks} sections → {out_path}")
     print(f"[ingest_documents] Wrote {total_table_facts} table facts → {table_out_path}")
     print(f"[ingest_documents] Wrote {total_rows} table facts → {row_out_path}")
+
+    # Optional: extract and interpret images from PDF files
+    if args.vision:
+        if args.source != "pdf":
+            print("[ingest_documents] --vision is only supported for --source pdf; skipping.")
+        else:
+            from vision.pipeline import run_vision_pipeline_to_jsonl
+
+            img_out_path = NORMALIZED_DIR / args.source / "image_descriptions.jsonl"
+            total_images = 0
+            for i, path in enumerate(files):
+                n = run_vision_pipeline_to_jsonl(
+                    str(path), str(img_out_path), append=(i > 0)
+                )
+                total_images += n
+            print(
+                f"[ingest_documents] Wrote {total_images} image description chunks"
+                f" → {img_out_path}"
+            )
 
 if __name__ == "__main__":
     main()

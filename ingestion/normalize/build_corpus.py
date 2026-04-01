@@ -183,6 +183,7 @@ def main() -> None:
     sections_file = base_dir / "sections.jsonl"
     chunks_file = base_dir / "rag_chunks.jsonl"
     tables_file = NORMALIZED_BASE / args.source / "doc_tables" / "raw_tables.jsonl"
+    images_file = base_dir / "image_descriptions.jsonl"
 
     if not sections_file.exists():
         raise FileNotFoundError(f"Missing {sections_file}. Run ingest_documents first.")
@@ -193,6 +194,7 @@ def main() -> None:
     total_sections = 0
     total_chunks = 0
     total_table_chunks = 0
+    total_image_chunks = 0
 
     with open(chunks_file, "w", encoding="utf-8") as chunks_f:
         for sec in read_jsonl(sections_file):
@@ -225,10 +227,27 @@ def main() -> None:
                 chunks_f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
                 total_table_chunks += 1
 
+        # Include image description chunks produced by the vision pipeline
+        if images_file.exists():
+            for chunk in read_jsonl(images_file):
+                text = chunk.get("text", "").strip()
+                if not text:
+                    continue
+                if not args.no_dedupe:
+                    key = f"{chunk.get('doc_id', '')}|image|{text}"
+                    h = short_hash(key)
+                    if h in seen:
+                        continue
+                    seen.add(h)
+                chunks_f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+                total_image_chunks += 1
+
     print(f"[build_corpus] Source={args.source}")
     print(f"[build_corpus] Read {total_sections} sections from {sections_file}")
-    print(f"[build_corpus] Wrote {total_chunks + total_table_chunks} chunks → {chunks_file}")
+    print(f"[build_corpus] Wrote {total_chunks + total_table_chunks + total_image_chunks} chunks → {chunks_file}")
     print(f"[build_corpus] Included {total_table_chunks} table summary chunks from {tables_file}")
+    if total_image_chunks:
+        print(f"[build_corpus] Included {total_image_chunks} image description chunks from {images_file}")
     print(f"[build_corpus] Params: max_chars={args.max_chars}, overlap_chars={args.overlap_chars}, "
         f"no_dedupe={args.no_dedupe}"
     )
