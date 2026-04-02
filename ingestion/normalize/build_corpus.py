@@ -120,6 +120,8 @@ def build_chunks_for_section(
     section_index = sec.get("section_index", 0)
     section_path = sec.get("path", []) or []
     title = clean_text(sec.get("title") or (section_path[-1] if section_path else ""))
+    blocks = sec.get("blocks") or []
+    page_start = blocks[0].get("page_start") if blocks else None
 
     blocks: List[Dict[str, Any]] = sec.get("blocks", []) or []
 
@@ -149,6 +151,7 @@ def build_chunks_for_section(
                 "section_path": section_path,
                 "section_index": section_index,
                 "block_type": "section_text",
+                "page": page_start,      # just added
                 "block_index": block_ordinal,
                 "text": ch,
                 "extra": {"source": source},

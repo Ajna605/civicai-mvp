@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional, Sequence
+from utils.retrieval_utils import unwrap_node, safe_node_text, safe_node_meta, safe_node_id, get_retrieved_nodes
 
 def norm_text(s: str) -> str:
     return " ".join((s or "").lower().split())
@@ -13,59 +14,6 @@ def normalize_dotted_acronyms(s: str) -> str:
         txt = m.group(0)
         return txt.replace(".", "")
     return _DOTTED_ACRONYM_RE.sub(repl, s or "")
-
-def unwrap_node(node_like: Any) -> Any:
-    return getattr(node_like, "node", node_like)
-
-def safe_node_text(node_like: Any) -> str:
-    node = unwrap_node(node_like)
-    try:
-        return node.get_text() or ""
-    except Exception:
-        pass
-    if hasattr(node, "text"):
-        try:
-            return node.text or ""
-        except Exception:
-            pass
-    return ""
-
-
-def safe_node_meta(node_like: Any) -> Dict[str, Any]:
-    node = unwrap_node(node_like)
-    md = getattr(node, "metadata", None)
-    if isinstance(md, dict):
-        return md
-    if isinstance(node, dict):
-        return dict(node)
-    return {}
-
-
-def safe_node_id(node_like: Any) -> str:
-    md = safe_node_meta(node_like)
-
-    if isinstance(md.get("id"), str) and md["id"]:
-        return md["id"]
-
-    table_id = md.get("table_id")
-    row_index = md.get("row_index")
-    if table_id is not None and row_index is not None:
-        return f"{table_id}::row::{row_index}"
-
-    node = unwrap_node(node_like)
-    if hasattr(node, "id_"):
-        try:
-            return node.id_ or ""
-        except Exception:
-            pass
-
-    txt = safe_node_text(node_like)
-    return f"anon::{hash(txt)}"
-
-
-def get_retrieved_nodes(index: Any, question: str, top_k: int = 10) -> List[Any]:
-    retriever = index.as_retriever(similarity_top_k=top_k)
-    return list(retriever.retrieve(question))
 
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -158,13 +106,40 @@ def token_overlap_score(question: str, text: str) -> float:
 
     return float(len(overlap)) + (len(overlap) / max(1.0, len(q)))
 
+# Give extra weight when units mentioned
+UNIT_PATTERNS = [
+    r"\b(far|floor\s+area\s+ratio)\b",
+    r"\b(density|densities)\b",
+    r"\b(dwelling\s+units?\s+per\s+acre)\b",
+    r"\b(units?\s*/\s*acre|units?\s+per\s+acre|du\s*/\s*ac|du\/ac|u\/ac)\b",
+    r"\b%\b",
+    r"\b(miles?|mi\.)\b",
+    r"\b(minutes?|mins?)\b",
+    r"\b(acres?|ac\.)\b",
+]
+
+UNIT_RE = re.compile("|".join(f"(?:{p})" for p in UNIT_PATTERNS), re.IGNORECASE)
+
+NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")  # 3, 3.5, 0.7, etc.
+
 
 def numeric_overlap_score(question: str, text: str) -> float:
-    q_nums = set(re.findall(r"\b\d+(?:\.\d+)?\b", question))
-    t_nums = set(re.findall(r"\b\d+(?:\.\d+)?\b", text))
+    q_nums = set(NUMBER_RE.findall(question or ""))
+    t_nums = set(NUMBER_RE.findall(text or ""))
     if not q_nums or not t_nums:
         return 0.0
-    return 2.0 * float(len(q_nums & t_nums))
+    return float(len(q_nums & t_nums))
+
+
+def unit_overlap_score(question: str, text: str) -> float:
+    # if query mentions a unit, reward chunks that also contain unit language
+    q_has_unit = bool(UNIT_RE.search(question or ""))
+    t_has_unit = bool(UNIT_RE.search(text or ""))
+    if q_has_unit and t_has_unit:
+        return 1.0
+    if q_has_unit and not t_has_unit:
+        return -0.25  # mild penalty: query is metric-y but chunk isn't
+    return 0.0
 
 
 def node_block_type(node_like: Any) -> Optional[str]:
@@ -334,12 +309,17 @@ def deterministic_rerank_score(
 
     substr = exact_substring_score(question, text)      # phrase matches
     overlap = token_overlap_score(question, text)       # keyword overlap
-    nums = numeric_overlap_score(question, text)        # numbers
-    score = substr + overlap + nums
+    metric_unit = unit_overlap_score(question, text)   # metric overlap
+    metric_nums = numeric_overlap_score(question, text) # number overlap
+    
+    # Weights (tune)
+    W_UNIT = 2.0
+    W_NUMS = 1.5
+    score = substr + overlap + W_NUMS * metric_nums + W_UNIT * metric_unit
 
     has_phrase = substr >= 3.0
     has_strong_overlap = overlap >= 2.5   # tuneable
-    has_numbers = nums > 0.0
+    has_numbers = metric_nums > 0.0
 
     bt = md.get("block_type")
 
@@ -373,7 +353,7 @@ def deterministic_rerank_score(
         in_locked = (tid in locked_set)
 
         # Evidence tiers
-        strong = has_phrase or (nums > 0.0)
+        strong = has_phrase or (metric_nums > 0.0)
         medium = overlap >= 2.5   # choose a threshold, not just > 0
 
         if strong:

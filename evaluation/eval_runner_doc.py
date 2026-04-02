@@ -27,6 +27,7 @@ import re
 from collections import Counter, defaultdict
 from rag.retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup
 from utils.text_utils import normalize, contains_all, contains_any, load_tests
+from rag.build_index import get_index
 from rag.retrieval.table_rerank import table_aware_retrieve, rerank_table_and_doc_hits, select_locked_table_ids, debug_ranked_nodes
 # from rag.query_engine import is_lookup_question
 from rag.retrieval.policy_lookup import extract_code_from_query
@@ -40,14 +41,6 @@ DEFAULT_BASE = PROJECT_ROOT / "storage" / "index"
 # -----------------------------
 # Index + retrieval
 # -----------------------------
-
-def get_index(format):
-    index_path = Path(DEFAULT_BASE, format)
-    print("[eval] using index_dir:", index_path)
-    print("INDEX PATH", index_path)
-    from rag.build_index import load_index
-    return load_index(index_path)
-
 
 def get_retrieved_nodes(index, query: str, top_k: int):
     retriever = index.as_retriever(similarity_top_k=top_k)
@@ -722,11 +715,11 @@ def main():
     out_csv = os.path.join(args.out_dir, f"results_{stamp}.csv")
     out_gate = os.path.join(args.out_dir, f"gate_{stamp}.json")
 
-    doc_index = get_index(args.format)
+    doc_index = get_index(DEFAULT_BASE, args.format)
     table_index = None # Optional
     if args.table_index:
         try:
-            table_index = get_index(f"{args.format}_tables")
+            table_index = get_index(DEFAULT_BASE, f"{args.format}_tables")
             print(f"Table Index loaded from {args.format}_tables")
         except Exception as e:
             print(f"[eval_runner_doc] Warning: could not load table index '{args.table_index}': {e}")

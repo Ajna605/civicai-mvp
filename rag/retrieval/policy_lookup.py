@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
+from utils.retrieval_utils import get_node_text
+
 
 CODE_RE = re.compile(r"\b([A-Z]{2,8}-\d+(?:\.\d+)*)\b")
 STOP_WORDS = {
@@ -63,19 +65,6 @@ class NodeWithScoreShim:
         self.node = node
         self.score = score
 
-def get_node_text(node_like: Any) -> str:
-    node = getattr(node_like, "node", node_like)
-
-    md = getattr(node, "metadata", None) or {}
-    title = (md.get("title") or "").strip()
-
-    txt = ""
-    if hasattr(node, "get_text"):
-        txt = node.get_text() or ""
-    elif hasattr(node, "text"):
-        txt = node.text or ""
-
-    return f"{title} {txt}".strip()
 
 ## more weight to rarer/longer terms by preferring longer keywords
 def policy_keyword_bonus(query: str, node_like: Any) -> float:
@@ -130,3 +119,6 @@ def retrieve_policy_lookup(
         reverse=True)
 
     return nodes[:k_eval]
+
+
+

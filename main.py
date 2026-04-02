@@ -4,7 +4,7 @@
 # - print answer + sources
 
 import time
-from rag.settings import apply_settings
+# from rag.llm_settings import rag_llm
 from rag.query_engine import query_civicai
 from sql_engine.query_engine import query_sql
 import argparse
@@ -29,16 +29,14 @@ TABULAR_CATEGORIES = ["cell_lookup", "aggregation", "row_filter", "chart_request
 if __name__ == "__main__":
     args = parse_args()
     # Document questions
-    # q = "Does the Coral Gables plan specify housing density limits?"
-    # q = "What is the restriction in regards to residential development throughout the coastal area of East of Old Cutler Road?"
-    # q = "Does the Coral Gables plan specify housing density limits?"
-    # q = "Explain what is mentioned in Policy FLU-1.1.2."
+
+    # from tests 
     # q = "What does the document say about Policy ADM-1.5.3.?"
-    # q = "Who are partners of the City?"
-    # q = "What are the residential density limits in the coastal area east of Old Cutler Road"
-    # q = "What is the restriction in regard to residential development throughout the coastal area of East of Old Cutler Road?"
-    # q =  "What is in the table showing Recreation facilities radius standard?"
-    q = "Does the Coral Gables plan specify housing density limits?"
+    # q = "What does the Coastal Management Element say about marinas?"
+    # q = "How does the city plan to be recognized as a green and sustainable community?" #2.4
+    # q = "Does the Coral Gables plan specify residential density limits?" #problematic
+
+    q =  "Which community groups in Coral Gables are most likely to face the greatest healthcare access pressure over the next 5–10 years?"
 
     ## Insurance Questions
     # q = "What is the number of insured people in Coral Gables under 64 years?" # aggregation
@@ -51,13 +49,16 @@ if __name__ == "__main__":
     index_path = Path(DEFAULT_BASE, args.format)
     print("index path", index_path)
     if args.engine == "rag":
-        apply_settings()     # loads model once
+        # rag_llm()     # loads model once
         start = time.time()
         print(q)
-        print(query_civicai(q, index_path))
+        print(query_civicai(q, index_path, args.format))
         end = time.time()
-        print("Time taken: ", (end - start)/60, "minutes")
+        print("Time taken: ", (end - start), "seconds")
 
     else:
         print(q)
+        start = time.time()
         print(query_sql(q, index_path))
+        end = time.time()
+        print("Time taken: ", (end - start), "seconds")

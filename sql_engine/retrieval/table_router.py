@@ -12,8 +12,8 @@ from llama_index.core import StorageContext, load_index_from_storage
 
 # If you have an apply_settings() somewhere (so embeddings match how index was built),
 # import and call it. If not, you can remove these two lines.
-from rag.settings import apply_settings  # adjust if your settings live elsewhere
-apply_settings()
+from rag.llm_settings import rag_llm  # adjust if your settings live elsewhere
+rag_llm()
 
 
 @dataclass

@@ -1,7 +1,12 @@
 # rag/query_engine.py
 import re
 from .build_index import load_index
-from .retrieval.policy_lookup import build_code_map_from_index, retrieve_policy_lookup, extract_code_from_query, norm_code
+from .retrieval.policy_lookup import retrieve_policy_lookup, extract_code_from_query, build_code_map_from_index
+from rag.retrieval.table_rerank import table_aware_retrieve
+from rag.build_index import get_index
+from rag.llm_settings import llm_verbalize_answer, conv_llm
+from utils.retrieval_utils import format_context
+from pathlib import Path
 
 STOPWORDS = {
     "the","a","an","and","or","to","of","in","on","for","with","about","what","does","say",
@@ -56,26 +61,29 @@ def get_retrieved_nodes(index, query: str, top_k: int):
     return retriever.retrieve(query)
 
 TOP_K = 5
-def query_civicai(query: str, index_path:str):
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BASE = PROJECT_ROOT / "storage" / "index"
+conv_llm()
+def query_civicai(query: str, index_path:str, format:str):
     index = load_index(index_path)
     code_map = build_code_map_from_index(index)
 
-    query_engine = index.as_query_engine(similarity_top_k=3, response_mode="compact")
-    response = query_engine.query(query)
+    doc_index = get_index(DEFAULT_BASE, format)
+    table_index = None # Optional
 
-    # Retrieve a decent pool; we'll filter/rank within it
-    retriever = index.as_retriever(similarity_top_k=30)
-    nodes = retriever.retrieve(query)  # list[NodeWithScore]
-
-    if not nodes:
-        return {"answer": "No relevant context retrieved.", "references": []}
+    try:
+        table_index = get_index(DEFAULT_BASE, f"{format}_tables")
+        print(f"Table Index loaded from {format}_tables")
+    except Exception as e:
+        print(f"[eval_runner_doc] Warning: could not load table index '{args.table_index}': {e}")
+        table_index = None
 
     # LOOKUP MODE
-    if is_lookup_question(query):
-        # Use deterministic code lookup when possible
-        code = extract_code_from_query(query)
+
+    code = extract_code_from_query(query)
+    if code:
         retrieved = retrieve_policy_lookup(
-            index,
+            doc_index,
             query,
             k_eval=1,                 # we only need best for lookup answer
             top_k_retrieve=30,
@@ -83,30 +91,30 @@ def query_civicai(query: str, index_path:str):
         )
 
         if not retrieved:
-            return {"answer": "No relevant context retrieved.", "references": []}
+            retrieved = []
     
     else:
-        retrieved = get_retrieved_nodes(index, query, top_k=TOP_K)
-
-    #     best = retrieved[0].node
-    #     best_text = best.get_text() if hasattr(best, "get_text") else str(best)
-
-    #     # If we found a code, anchor snippet around it; else keep your old token heuristic
-    #     anchor = code or (extract_rare_tokens(query)[0] if extract_rare_tokens(query) else "")
-    #     ans = snippet_around(best_text, anchor) if anchor else " ".join(best_text.split())[:260]
-
-    #     return {"answer": ans, "references": [ref_from(best)]}
-
+        retrieved = retrieved = table_aware_retrieve(
+                question=query,
+                doc_index=doc_index,
+                row_index=table_index,
+                top_k_docs=TOP_K,
+                top_k_rows=20,
+                final_top_k=TOP_K,
+            )
 
     # THEMATIC / GENERAL MODE (simple for now)
     # Return top 2 chunks (cleaned) + references
     top_texts = []
     refs = []
-    for nws in nodes[:5]:
+    for nws in retrieved[:5]:
         top_texts.append(" ".join(nws.node.get_text().split())[:350])
         refs.append(ref_from(nws.node))
 
-    return {
-        "answer": "\n\n".join(top_texts).strip(),
-        "references": refs
-    }
+    return {"answer": llm_verbalize_answer(query, format_context(retrieved)), 
+            "references": refs}
+
+    # return {
+    #     "answer": "\n\n".join(top_texts).strip(),
+    #     "references": refs
+    # }

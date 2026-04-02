@@ -5,8 +5,8 @@
 from pathlib import Path
 from llama_index.core import Document, VectorStoreIndex, StorageContext, load_index_from_storage
 import argparse
-from .settings import apply_settings
-apply_settings()
+from .llm_settings import rag_llm
+rag_llm()
 import json
 import shutil
 from typing import List
@@ -28,6 +28,17 @@ def parse_args():
         help="Filename for table rows JSONL inside base/<source>/doc_tables/ (default: table_rows.jsonl)")
     return p.parse_args()
 
+
+def load_index(index_dir: Path) -> VectorStoreIndex:
+    if not index_dir.exists():
+        raise FileNotFoundError(f"Index not found at {index_dir}. Run build_index first.")
+    storage_context = StorageContext.from_defaults(persist_dir=str(index_dir))
+    return load_index_from_storage(storage_context)
+
+def get_index(path: str, format):
+    index_path = Path(path, format)
+    print("[INDEX] using index_dir:", index_path)
+    return load_index(index_path)
 
 def _resolve_jsonl_paths(path_or_pattern: Path) -> List[Path]:
     """
@@ -88,6 +99,7 @@ def build_index(jsonl_path: Path, index_dir: Path, kind: str = "doc"):
                         "path_text": rec.get("path_text"),
                         "block_type": rec.get("block_type"),
                         "block_index": rec.get("block_index"),
+                        "page": rec.get("page")
                     }
 
                     if isinstance(rec.get("extra"), dict):
@@ -95,9 +107,6 @@ def build_index(jsonl_path: Path, index_dir: Path, kind: str = "doc"):
 
                 elif kind == "row":
                     if rec.get("table_index") == None:
-                        print("table_id", rec.get("table_id"))
-                        print("table_index", rec.get("table_index"), )
-                        print("None")
                         return 0
                     text = (rec.get("search_text") or "").strip()
                     if not text:
@@ -116,6 +125,7 @@ def build_index(jsonl_path: Path, index_dir: Path, kind: str = "doc"):
                         "caption": rec.get("caption"),
                         "header_terms": rec.get("header_terms"),
                         "row_values": rec.get("row_values"),
+                        "page": rec.get("page")
                     }
 
                 elif kind == "csv":
@@ -152,12 +162,6 @@ def build_index(jsonl_path: Path, index_dir: Path, kind: str = "doc"):
     index.storage_context.persist(persist_dir=str(index_dir))
     return index
 
-
-def load_index(index_dir: Path) -> VectorStoreIndex:
-    if not index_dir.exists():
-        raise FileNotFoundError(f"Index not found at {index_dir}. Run build_index first.")
-    storage_context = StorageContext.from_defaults(persist_dir=str(index_dir))
-    return load_index_from_storage(storage_context)
 
 def main():
     args = parse_args()

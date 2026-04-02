@@ -116,3 +116,5 @@ def csv_record_to_text(rec: dict) -> str:
         f"Column: {raw_col}" if raw_col else None,
     ]
     return " | ".join([p for p in parts if p])
+
+

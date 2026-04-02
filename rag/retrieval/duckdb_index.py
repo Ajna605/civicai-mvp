@@ -6,8 +6,8 @@ from typing import Iterable, List, Optional
 
 import duckdb
 from llama_index.core import Document, VectorStoreIndex
-from rag.settings import apply_settings
-apply_settings()
+from rag.llm_settings import rag_llm
+rag_llm()
 
 
 def parse_args():
