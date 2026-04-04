@@ -5,7 +5,6 @@ from sql_engine.llm_utils.query_guards import OVER_HINT, UNDER_HINT, RANGE_HINT,
 from sql_engine.llm_utils.json_schema import CATEGORY_SCHEMAS
 ALLOWED_STAT_TYPES = {"Estimate", "Margin of Error"}
 
-# validator.py (or wherever SCHEMA_TEXT lives)
 
 def make_param_prompt(question: str, metadata: dict, constraints: Optional[Dict[str, Any]] = None) -> str:
     forced = ""
@@ -48,17 +47,10 @@ def make_param_prompt(question: str, metadata: dict, constraints: Optional[Dict[
             + CATEGORY_SCHEMAS[forced_cat]
         )
 
-    # Add explicit anti-nesting instruction (most important line)
-    anti_nesting = (
-        "\n\nANTI-NESTING RULE (critical):\n"
-        "- The value of top-level key \"query\" MUST be the INNER query object ONLY.\n"
-        "- Never put keys \"category\" or \"query\" inside the \"query\" object.\n"
-    )
 
     return (
         forced
         + schema
-        #+ anti_nesting
         + "\n\n"
         + FEWSHOT_TEXT.strip()
         + "\n\nQUESTION:\n"
@@ -96,6 +88,34 @@ def validate_cell_lookup(obj: Dict[str, Any], meta: Dict[str, List[str]]) -> Tup
         return False, "stat_type_not_in_metadata"
 
     return True, "ok"
+
+# sql_engine/llm_utils/validator.py
+
+ALLOWED_SORT = {"x_asc", "x_desc", "y_asc", "y_desc"}
+
+def default_chart_sort(pred: dict) -> dict:
+    """
+    If sort missing → default to x_asc for categorical bar charts.
+    Leaves other chart types unchanged.
+    """
+    if pred.get("category") != "chart_request":
+        return pred
+
+    q = pred.get("query") or {}
+    chart_type = (q.get("chart_type") or "categorical").lower()
+    print("chart type", chart_type)
+    sort = q.get("sort")
+
+    if sort is not None and sort not in ALLOWED_SORT:
+        # either drop invalid sort or error; I'd drop to be robust
+        q.pop("sort", None)
+        sort = None
+
+    if sort is None and chart_type == "categorical" :
+        q["sort"] = "x_asc"
+
+    pred["query"] = q
+    return pred
 
 def build_repair_prompt(question: str, bad_json: str, error: str, meta: Dict[str, Any]) -> str:
     extra = ""

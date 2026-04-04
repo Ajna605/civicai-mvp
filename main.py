@@ -4,9 +4,7 @@
 # - print answer + sources
 
 import time
-# from rag.llm_settings import rag_llm
-from rag.query_engine import query_civicai
-from sql_engine.query_engine import query_sql
+from utils.forecast_utils import is_forecast_question
 import argparse
 from pathlib import Path
 
@@ -36,8 +34,6 @@ if __name__ == "__main__":
     # q = "How does the city plan to be recognized as a green and sustainable community?" #2.4
     # q = "Does the Coral Gables plan specify residential density limits?" #problematic
 
-    q =  "Which community groups in Coral Gables are most likely to face the greatest healthcare access pressure over the next 5–10 years?"
-
     ## Insurance Questions
     # q = "What is the number of insured people in Coral Gables under 64 years?" # aggregation
     # q = "Show how disability affects the percent of people insured" # chart
@@ -46,10 +42,19 @@ if __name__ == "__main__":
     # q = "What is the population under 24 years in Coral Gables?" # aggregation works
     # q = "What age range is most prominent in Coral Gables?" # row_filter #works
     # q = "Create a bar chart of age groups vs total population." # chart_request # works
+
+    ## BIG Question
+    q =  "Which community groups in Coral Gables are most likely to face the greatest healthcare access pressure over the next 5–10 years?"
+
     index_path = Path(DEFAULT_BASE, args.format)
     print("index path", index_path)
-    if args.engine == "rag":
-        # rag_llm()     # loads model once
+
+    if is_forecast_question(q):
+        from sql_engine.analytics_sql.executor_analytics import query_analytics
+        print("analyzeeee")
+        print(query_analytics(q, index_path))
+    elif args.engine == "rag":
+        from rag.query_engine import query_civicai
         start = time.time()
         print(q)
         print(query_civicai(q, index_path, args.format))
@@ -57,6 +62,7 @@ if __name__ == "__main__":
         print("Time taken: ", (end - start), "seconds")
 
     else:
+        from sql_engine.executor_simple import query_sql
         print(q)
         start = time.time()
         print(query_sql(q, index_path))

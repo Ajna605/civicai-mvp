@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Optional, Tuple, Any
 import pandas as pd
 import re
 import argparse, json
-from utils.text_utils import clean_text, infer_table_name
+from utils.text_utils import clean_text, infer_table_name, extract_year_from_source
 
 YEAR_RE = re.compile(r"^(19|20)\d{2}$")
 
@@ -48,6 +48,19 @@ def _coerce_float(x):
     except Exception:
         return None
 
+def _coerce_year(v) -> Optional[int]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    # common case: "2024" or 2024.0
+    try:
+        y = int(float(s))
+    except ValueError:
+        return None
+    return y if 1900 <= y <= 2100 else None
+
 def _looks_like_year(col: str) -> bool:
     return bool(YEAR_RE.match(col))
 
@@ -77,6 +90,8 @@ def normalize_csv_to_facts(
 ) -> List[Dict[str, Any]]:
     df = pd.read_csv(csv_path)
     df.columns = [_clean_header(c) for c in df.columns]
+    # Get year from filename
+    file_year = extract_year_from_source(source_file)
 
     # If it already looks tidy:
     lower_cols = {c.lower(): c for c in df.columns}
@@ -90,10 +105,9 @@ def normalize_csv_to_facts(
         geo_c = lower_cols.get("geo")
         subject_c = lower_cols.get("subject")
         stat_type_c = lower_cols.get("stat_type") or lower_cols.get("stat")  # optional aliases
-
-
         out = []
         for i, row in df.iterrows():
+            row_year = _coerce_year(row.get(year_c)) if year_c else None
             out.append({
                 "row_id": None,  # assigned later in DuckDB
                 "source_file": source_file,
@@ -101,7 +115,7 @@ def normalize_csv_to_facts(
                 "measure": str(row.get(measure_c, "")).strip(),
                 "value": _coerce_float(row.get(value_c)),
                 "raw_value": row.get(value_c),
-                "year": int(row.get(year_c)) if year_c and _coerce_float(row.get(year_c)) is not None else None,
+                "year": row_year if row_year is not None else file_year,
                 "unit": str(row.get(unit_c)).strip() if unit_c and pd.notna(row.get(unit_c)) else default_unit,
                 "geo": str(row.get(geo_c)).strip() if geo_c and pd.notna(row.get(geo_c)) else default_geo,
                 "subject": str(row.get(subject_c)).strip() if subject_c and pd.notna(row.get(subject_c)) else None,
@@ -139,10 +153,11 @@ def normalize_csv_to_facts(
 
         # default outputs
         label = None
+        geo = None
         measure = None
         subject = None
         stat_type = None
-        year = None
+        year = file_year
 
         orig_row_id = int(r["orig_row_id"])
         orig_col_id = int(col_id_map[col])
@@ -177,7 +192,7 @@ def normalize_csv_to_facts(
             "raw_value": raw,
             "year": year,
             "unit": default_unit,
-            "geo": label,                 # optional duplicate; or keep default_geo if you prefer
+            "geo": geo or default_geo,           # optional duplicate; or keep default_geo if you prefer
             "subject": subject,
             "stat_type": stat_type,
             "raw_row": clean_text(r[stat_col]),  # or label_c depending on your taste

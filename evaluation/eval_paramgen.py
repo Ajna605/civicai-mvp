@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from collections import Counter, defaultdict
 from sql_engine.llm_utils.query_guards import resolve_measure_override
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
-from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures, validate_cell_lookup
+from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures, validate_cell_lookup, default_chart_sort
 
 DEFAULT_SUBJECT = "Total"
 DEFAULT_STAT_TYPE = "Estimate"
@@ -67,7 +67,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--eval_path", required=True, help="Path to test_questions.json")
     ap.add_argument("--out_path", default="eval/paramgen_results.jsonl")
-    ap.add_argument("--meta_path", default="storage/metadata/demographics_facts_metadata.json")
+    ap.add_argument("--meta_path", default="insurance_facts_metadata.json")
     ap.add_argument("--max_repairs", type=int, default=2)
     args = ap.parse_args()
 
@@ -102,11 +102,9 @@ def main():
         print("QUESTION", question)
         gold_cat = ex["category"]
         gold_query = ex.get("query", {})
+        print("gold qeury", gold_query)
 
         measure_override = resolve_measure_override(question, meta)
-        print("MEASURE OVERRIDE")
-        print(measure_override)
-
 
         rec: Dict[str, Any] = {
             "id": qid,
@@ -132,14 +130,18 @@ def main():
             rec["pred"] = pred
             
             pred_cat = pred.get("category")
-
-            if pred_cat == "cell_lookup":
-                validate_cell_lookup(pred, meta)
-
             pred_query = pred.get("query")
+
+            if pred.get("category") == "chart_request":
+                print("HEREEEE")
+                pred = default_chart_sort(pred)
 
             # basic JSON/schema presence
             schema_pass = isinstance(pred_cat, str) and isinstance(pred_query, dict)
+
+            # check for cell_lookup
+            if schema_pass and pred.get("category") == "cell_lookup":
+                schema_pass, schema_reason = validate_cell_lookup(pred, meta)
 
             # semantic validation: measure_group consistency
             group_ok, group_reason = validate_measure_group_consistency(pred, meta)

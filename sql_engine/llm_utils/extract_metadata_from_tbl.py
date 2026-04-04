@@ -101,14 +101,15 @@ def export_metadata(con: duckdb.DuckDBPyConnection, table="facts") -> dict:
 
     meta = {
         "source_files": source_files,
-        "subjects": col_values("subject"),
+        "metric_names": col_values("subject"),
         "stat_types": col_values("stat_type"),
-        "labels": col_values("label"),
-        "measures": leaf_measures,
+        "geos": col_values("label"),
+        "groups": leaf_measures,
         "geos": col_values("geo"),
         "years": col_values("year"),
         "units": col_values("unit"),
         "measure_headings": measure_headings,
+        "table_name": table,
         "measure_groups": measure_groups,
         "measure_to_group": measure_to_group,
     }

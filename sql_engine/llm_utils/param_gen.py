@@ -8,19 +8,23 @@ from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_ll
 from utils.text_utils import extract_first_valid_param_obj
 from sql_engine.llm_utils.query_guards import resolve_measure_override
 from copy import deepcopy
-
 import time
 
 
 def load_metadata(table_name: str) -> Dict[str, Any]:
     metadata_dir = Path("storage/metadata").expanduser().resolve()
-    path = metadata_dir / f"{table_name}_metadata.json"
+    path = metadata_dir / f"{table_name}"
     if not path.exists():
         raise FileNotFoundError(f"Missing metadata for table '{table_name}': {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
-PARAM_LLM = build_param_llm()
-print(PARAM_LLM._model.device)
+_PARAM_LLM = None
+def get_param_llm():
+    global _PARAM_LLM
+    if _PARAM_LLM is None:
+        _PARAM_LLM = build_param_llm()
+        print(_PARAM_LLM._model.device)
+    return _PARAM_LLM
 
 def apply_forced_constraints(obj: Dict[str, Any], constraints: dict | None) -> Dict[str, Any]:
     if not constraints:
@@ -73,7 +77,7 @@ def llm_make_params(
     prompt = make_param_prompt(question, metadata, constraints=constraints)
 
     t0 = time.time()
-    raw = generate_json_only(PARAM_LLM, prompt).strip()
+    raw = generate_json_only(get_param_llm(), prompt).strip()
     print("llm seconds:", round(time.time() - t0, 2))
 
     for attempt in range(max_repairs + 1):
@@ -86,7 +90,7 @@ def llm_make_params(
                 )
             error = "invalid_json"
             raw = generate_json_only(
-                PARAM_LLM,
+                get_param_llm(),
                 build_repair_prompt(question, raw, error, metadata)
             ).strip()
             continue
@@ -98,7 +102,7 @@ def llm_make_params(
                 )
             error = "missing_category_or_query"
             raw = generate_json_only(
-                PARAM_LLM,
+                get_param_llm(),
                 build_repair_prompt(question, raw, error, metadata)
             ).strip()
             continue
@@ -116,7 +120,7 @@ def llm_make_params(
                 group_reason,
                 metadata,
             )
-            raw = generate_json_only(PARAM_LLM, repair_prompt).strip()
+            raw = generate_json_only(get_param_llm(), repair_prompt).strip()
             continue
 
 
@@ -128,7 +132,7 @@ def llm_make_params(
         if obj.get("category") == "cell_lookup" and not validate_against_metadata(obj.get("query", {}), metadata):
             error = "cell_lookup_values_not_in_metadata"
             raw = generate_json_only(
-                PARAM_LLM,
+                get_param_llm(),
                 build_repair_prompt(question, raw, error, metadata)
             ).strip()
             continue

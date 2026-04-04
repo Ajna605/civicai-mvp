@@ -1,4 +1,4 @@
-# sql_engine/query_engine.py
+# sql_engine/query_engine.py for simple CSV queries
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any
@@ -171,7 +171,7 @@ def query_sql(query: str, index_path:str):
             rec["failure_type"] = "exception"
 
     result = run_structured_query(DUCKDB_PATH, pred["category"], pred["query"], table_name)
-    # print("result", result)
+    # Generate and save charts
     runtime = AnalyticsRuntime(out_dir="storage/charts")
     chart_result = runtime.render_from_result(result)
 

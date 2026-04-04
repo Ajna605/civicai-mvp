@@ -8,8 +8,8 @@ import json
 class ParamLLMConfig:
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
     # model_name: str = "Qwen/Qwen2.5-3B-Instruct"  # for faster run
-    context_window: int = 8192
-    max_new_tokens: int = 300
+    context_window: int = 2048   # or 4096 if you truly need it
+    max_new_tokens: int = 200  
 
 
 def build_param_llm(cfg: Optional[ParamLLMConfig] = None) -> HuggingFaceLLM:
@@ -24,7 +24,7 @@ def build_param_llm(cfg: Optional[ParamLLMConfig] = None) -> HuggingFaceLLM:
             "do_sample": False,
         },
         model_kwargs={
-            "torch_dtype": "auto"
+            "torch_dtype": "torch.bfloat16"
         },
     )
     return llm

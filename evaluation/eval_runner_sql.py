@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Any, Dict
 from sql_engine.llm_utils.param_gen import load_metadata, llm_make_params
 
-from sql_engine.query_engine import run_structured_query
+from sql_engine.executor_simple import run_structured_query
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--db", required=True)
     p.add_argument("--tests", required=True)
+    p.add_argument("--table_name", default= 'insurance_facts')
     p.add_argument("--out", default="eval_outputs/structured/results.jsonl")
     return p.parse_args()
 
@@ -50,6 +51,7 @@ if __name__ == "__main__":
     db_path = Path(args.db).resolve()
     tests_path = Path(args.tests)
     out_path = Path(args.out)
+    table_name = args.table_name
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     total = 0
@@ -67,7 +69,7 @@ if __name__ == "__main__":
             q = t.get("query", {})
             exp = t.get("expected", {})
 
-            res = run_structured_query(db_path, cat, q)
+            res = run_structured_query(db_path, cat, q, table_name)
 
             ok = False
             reason = None

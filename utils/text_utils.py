@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 from pathlib import Path
 
@@ -118,3 +118,15 @@ def csv_record_to_text(rec: dict) -> str:
     return " | ".join([p for p in parts if p])
 
 
+_YEAR_RE = re.compile(r"(19|20)\d{2}")
+
+def extract_year_from_source(source_file: str) -> Optional[int]:
+    """
+    Extracts a 4-digit year (1900-2099) from a filename/path like:
+    'Selected Characteristics ... - 2024.csv'
+    Returns None if no year is found.
+    """
+    if not source_file:
+        return None
+    m = _YEAR_RE.search(source_file)
+    return int(m.group(0)) if m else None

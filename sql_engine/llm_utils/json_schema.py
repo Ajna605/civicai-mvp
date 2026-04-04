@@ -15,7 +15,8 @@ Hard constraints:
 - If query uses measures_in, you MUST also provide measure_group.
 - measure_group must be chosen from METADATA.measure_headings.
 - Every measure in measures_in must belong to METADATA.measure_groups[measure_group].
-- Never mix measures from different measure groups.
+- For cell_lookup|aggregation|row_filter|chart_request, never mix measures from different measure groups.
+- For analytics_rank, each input must specify exactly one measure_group; multiple inputs may use different measure_groups.
 
 Enum values:
 - aggregation.query.op: "sum"|"avg"|"min"|"max"|"count"
@@ -37,6 +38,7 @@ row_filter:
 
 chart_request:
 {"category":"chart_request","query":{"measure_group":"...","chart_type":"categorical|time_series|compare_labels","viz_type":"bar|pie|line|scatter","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]},"x":"measure|year|label|geo","y":"value"}}
+
 
 Rules:
 - If the question asks for margin of error / MOE -> stat_type="Margin of Error"
