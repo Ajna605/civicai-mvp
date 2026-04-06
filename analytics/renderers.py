@@ -139,33 +139,106 @@ def render_categorical_bar(
     return png_path, html_path
 
 
-def render_time_series(
-    df: pd.DataFrame,
-    query: Dict[str, Any],
-    out_path: Path,
-) -> Tuple[Path, Optional[Path]]:
-    """Render a time-series line chart (x=year, y=value).
+# name=sql_engine/analytics_sql/renderers.py  (or wherever render_time_series lives)
 
-    Parameters
-    ----------
-    df:
-        DataFrame with columns ``year`` and ``value``.
-    query:
-        Original chart_request query dict (used for title).
-    out_path:
-        Base output path *without* extension.
+def render_time_series(df, query, out_path):
+    import matplotlib.pyplot as plt
 
-    Returns
-    -------
-    (png_path, html_path | None)
-    """
-    df = df.sort_values("year").reset_index(drop=True)
-    title = f"Trend over Time – {query.get('measure_group', '')}"
-    x_vals = df["year"].tolist()
-    y_vals = df["value"].tolist()
-    png_path = _save_png_line(x_vals, y_vals, title, "Year", out_path)
-    html_path = _save_html_line(x_vals, y_vals, title, "Year", out_path)
-    return png_path, html_path
+    # Pick the series/legend column
+    series_col = None
+    if "measure" in df.columns:
+        series_col = "measure"
+    elif "label" in df.columns:
+        series_col = "label"
+
+    has_forecast = "is_forecast" in df.columns
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    if series_col is None:
+        d = df.sort_values("year")
+
+        if has_forecast:
+            obs = d[d["is_forecast"] == False]
+            fc = d[d["is_forecast"] == True]
+
+            obs = obs.sort_values("year")
+            fc = fc.sort_values("year")
+
+            if not obs.empty:
+                ax.plot(obs["year"], obs["value"], marker="o", linewidth=2, label="Observed")
+            if not fc.empty:
+                # bridge last observed -> first forecast
+                if not obs.empty:
+                    x = [obs.iloc[-1]["year"]] + fc["year"].tolist()
+                    y = [obs.iloc[-1]["value"]] + fc["value"].tolist()
+                else:
+                    x = fc["year"].tolist()
+                    y = fc["value"].tolist()
+                ax.plot(x, y, marker="o", linewidth=2, linestyle="--", alpha=0.9, label="Forecast")
+
+            ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
+        else:
+            ax.plot(d["year"], d["value"], marker="o", linewidth=2)
+
+    else:
+        # Multi-series: one line per group, with optional dashed forecast continuation
+        for name, g in df.groupby(series_col):
+            g = g.sort_values("year")
+
+            if has_forecast:
+                obs = g[g["is_forecast"] == False].sort_values("year")
+                fc = g[g["is_forecast"] == True].sort_values("year")
+
+                # Observed (solid)
+                if not obs.empty:
+                    ax.plot(
+                        obs["year"], obs["value"],
+                        marker="o", linewidth=2, label=str(name)
+                    )
+
+                # Forecast (dashed) in same color as observed line:
+                if not fc.empty:
+                    if not obs.empty:
+                        x = [obs.iloc[-1]["year"]] + fc["year"].tolist()
+                        y = [obs.iloc[-1]["value"]] + fc["value"].tolist()
+                    else:
+                        x = fc["year"].tolist()
+                        y = fc["value"].tolist()
+
+                    # Use the last line's color so dashed matches the group color
+                    color = ax.lines[-1].get_color() if ax.lines else None
+                    ax.plot(
+                        x, y,
+                        marker="o", linewidth=2, linestyle="--", alpha=0.7,
+                        color=color
+                    )
+            else:
+                ax.plot(g["year"], g["value"], marker="o", linewidth=2, label=str(name))
+
+        ax.legend(title=series_col, bbox_to_anchor=(1.02, 1), loc="upper left")
+
+        if has_forecast:
+            # add a small note on the plot area so users understand dashed meaning
+            ax.text(
+                0.01, 0.01,
+                "Dashed = simple linear projection",
+                transform=ax.transAxes,
+                fontsize=9,
+                alpha=0.8,
+                va="bottom",
+            )
+
+    ax.set_title(query.get("title") or f"Trend over Time – {query.get('measure_group','')}")
+    ax.set_xlabel("Year")
+    ax.set_ylabel(query.get("y_label") or "Value")
+    ax.grid(True, alpha=0.3)
+
+    png_path = str(out_path) + ".png"
+    fig.tight_layout()
+    fig.savefig(png_path, dpi=200)
+    plt.close(fig)
+    return png_path, None
 
 
 def render_compare_labels(

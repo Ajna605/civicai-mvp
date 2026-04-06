@@ -40,9 +40,7 @@ _PARAM_LLM = None
 def get_param_llm():
     global _PARAM_LLM
     if _PARAM_LLM is None:
-        _PARAM_LLM = build_param_llm()
-        print(_PARAM_LLM._model.device)
-    
+       _PARAM_LLM = build_param_llm()
     print("BUILDING PARAM LLM in PID", os.getpid())
     return _PARAM_LLM
 
@@ -57,24 +55,23 @@ def llm_make_params(
     # do not overwrite them. Otherwise compute deterministic override here.
 
     prompt = make_analytics_prompt(question, metadata, constraints=constraints)
-    # print("PROMPT", prompt)
+
     t0 = time.time()
     raw = generate_json_only(get_param_llm(), prompt).strip()
-    print("raw", raw)
-    obj = extract_first_valid_param_obj(raw)
-    # for attempt in range(max_repairs + 1):
-    #     try:
-    #         obj = extract_first_valid_param_obj(raw)
-    #     except Exception:
-    #         if attempt == max_repairs:
-    #             raise ValueError(
-    #                 f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
-    #             )
-    #         error = "invalid_json"
-    #         raw = generate_json_only(get_param_llm(), build_repair_prompt(question, raw, error, metadata)
-    #         ).strip()
-    #         continue
-    print(obj)
+    # obj = extract_first_valid_param_obj(raw)
+    for attempt in range(max_repairs + 1):
+        try:
+            obj = extract_first_valid_param_obj(raw)
+        except Exception:
+            if attempt == max_repairs:
+                raise ValueError(
+                    f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
+                )
+            error = "invalid_json"
+            raw = generate_json_only(get_param_llm(), build_repair_prompt(question, raw, error, metadata)
+            ).strip()
+            continue
+    return obj
 
     #     if not isinstance(obj, dict) or "category" not in obj or "query" not in obj:
     #         if attempt == max_repairs:
