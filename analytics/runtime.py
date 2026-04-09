@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from analytics.data_shaper import points_to_dataframe
 from analytics import renderers
@@ -27,11 +27,7 @@ class AnalyticsRuntime:
     ) -> None:
         self.out_dir = Path(out_dir)
 
-    def render_from_result(
-        self,
-        obj: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Render chart artifacts from an already-executed SQL result."""
+    def render_from_result(self, obj: Dict[str, Any]) -> Dict[str, Any]:
         category = (obj or {}).get("category")
         query = (obj or {}).get("query") or {}
         points = ((obj.get("result") or {}).get("points")) or []
@@ -45,6 +41,10 @@ class AnalyticsRuntime:
         if chart_type not in _CHART_TYPES:
             return self._error(f"unsupported chart_type: '{chart_type}'")
 
+        viz_type = (query.get("viz_type") or "bar").lower()
+        if viz_type not in {"bar", "pie", "line"}:
+            return self._error(f"unsupported viz_type: '{viz_type}'")
+
         df = points_to_dataframe(points, chart_type)
         if df.empty:
             return self._error("no_data_after_shaping")
@@ -55,16 +55,24 @@ class AnalyticsRuntime:
         mg_slug = (query.get("measure_group") or "chart").replace(" ", "_")[:30]
         out_path = self.out_dir / f"{chart_id}_{mg_slug}"
 
+        # Render
         if chart_type == "categorical":
-            png_path, html_path = renderers.render_categorical_bar(df, query, out_path)
+            if viz_type == "pie":
+                png_path, html_path = renderers.render_categorical_pie(df, query, out_path)
+            else:
+                png_path, html_path = renderers.render_categorical_bar(df, query, out_path)
+
         elif chart_type == "time_series":
+            # force line for time series (optional)
             png_path, html_path = renderers.render_time_series(df, query, out_path)
-        else:
+
+        else:  # compare_labels
+            # pie doesn't really apply here; keep grouped bar
             png_path, html_path = renderers.render_compare_labels(df, query, out_path)
 
         chart_summary = {
             "chart_type": chart_type,
-            "viz_type": query.get("viz_type", "bar"),
+            "viz_type": viz_type,
             "x_field": _X_COLS.get(chart_type, "x"),
             "y_field": "value",
             "row_count": len(df),

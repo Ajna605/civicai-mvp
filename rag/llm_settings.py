@@ -36,21 +36,19 @@ def conv_llm() -> None:
         model_name="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_name="Qwen/Qwen2.5-7B-Instruct",
         context_window=8192,
-        max_new_tokens=250,
+        max_new_tokens=200,
         device_map="cuda",
-        generate_kwargs={"do_sample": False, "repetition_penalty": 1.08},
+        generate_kwargs={"do_sample": False, "repetition_penalty": 1.12},
         model_kwargs={"dtype": torch.bfloat16},
     )
 
-
 def llm_verbalize_answer(question: str, context: str) -> str:
     llm = Settings.llm
-   
-    prompt = f"""You are answering a user question using ONLY the evidence below.
+    if llm is None:
+        raise RuntimeError("Settings.llm is None")
 
-Write a natural, synthesized answer that combines relevant information across the evidence.
-Do NOT include citations like [1], do NOT mention the evidence block numbers, and do NOT quote long passages.
-If the evidence is insufficient, say what is missing.
+    prompt = f"""Use ONLY the evidence. Answer in 1–2 sentences.
+Do not repeat yourself. Do not add missing-details speculation unless the user asks.
 
 Question: {question}
 

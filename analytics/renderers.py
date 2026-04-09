@@ -268,3 +268,45 @@ def render_compare_labels(
     png_path = _save_png_bar(x_vals, y_vals, title, "Label", out_path)
     html_path = _save_html_bar(x_vals, y_vals, title, "Label", out_path)
     return png_path, html_path
+
+
+def render_categorical_pie(
+    df: pd.DataFrame,
+    query: Dict[str, Any],
+    out_path: Path,
+) -> Tuple[Path, Optional[Path]]:
+    """
+    Render a categorical pie chart using df columns:
+      - measure (labels)
+      - value (sizes)
+    """
+    # Optional sort: default x_asc if missing
+    sort = query.get("sort") or "x_asc"
+    df = _apply_sort(df, "measure", sort)
+
+    title = f"Distribution by {query.get('measure_group', 'Measure')}"
+
+    labels = df["measure"].astype(str).tolist()
+    values = df["value"].tolist()
+
+    # ---- PNG (matplotlib) ----
+    png_path = out_path.with_suffix(".png")
+    plt.figure(figsize=(10, 8))
+    plt.pie(values, labels=None, autopct="%1.1f%%", startangle=90)
+    plt.title(title)
+    plt.axis("equal")
+    # Put legend on the side (labels can be long)
+    plt.legend(labels, loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize="small")
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=200)
+    plt.close()
+
+    # ---- HTML (plotly) optional ----
+    html_path: Optional[Path] = None
+    if _go is not None:
+        fig = _go.Figure(data=[_go.Pie(labels=labels, values=values, textinfo="percent+label")])
+        fig.update_layout(title=title)
+        html_path = out_path.with_suffix(".html")
+        fig.write_html(str(html_path))
+
+    return png_path, html_path

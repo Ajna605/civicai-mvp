@@ -127,7 +127,7 @@
   },
     {
     "id": "Q4.1",
-    "question": "Show a pie chat of uninsured man vs women",
+    "question": "Show a pie chart of uninsured man vs women",
     "category": "chart_request",
     "query": {
       "measure_group": "SEX",
