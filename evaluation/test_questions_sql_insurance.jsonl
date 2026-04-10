@@ -101,6 +101,163 @@
   },
   "known_issue": false
 },
+{
+  "id": "Q2.2",
+  "question": "What number of households make under $99,999?",
+  "category": "aggregation",
+    "query": {
+  "measure_group": "HOUSEHOLD INCOME (IN 2024 INFLATION-ADJUSTED DOLLARS)",
+  "op": "sum",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "measures_in":["Under $25,000", "$25,000 to $49,999", "$50,000 to $74,999", "$75,000 to $99,999"],
+    "subject": "Total",
+    "stat_type": "Estimate"
+  }},
+  "expected": {
+    "expected_numbers": [13158],
+    "tolerance": 0
+  },
+  "known_issue": false
+},
+{
+  "id": "Q2.3",
+  "question": "How many people are below the 399 percent of the poverty threshold?",
+  "category": "aggregation",
+    "query": {
+  "measure_group": "RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS",
+  "op": "sum",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "measures_in":["Below 138 percent of the poverty threshold", "138 to 399 percent of the poverty threshold"],
+    "subject": "Total",
+    "stat_type": "Estimate"
+  }},
+  "expected": {
+    "expected_numbers": [13147],
+    "tolerance": 0
+  },
+  "known_issue": false
+},
+{
+  "id": "Q2.4",
+  "question": "How many uninsured people make over $75,000?",
+  "category": "aggregation",
+    "query": {
+  "measure_group": "HOUSEHOLD INCOME (IN 2024 INFLATION-ADJUSTED DOLLARS)",
+  "op": "sum",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "measures_in":["$75,000 to $99,999", "$100,000 and over"],
+    "subject": "Uninsured",
+    "stat_type": "Estimate"
+  }},
+  "expected": {
+    "expected_numbers": [759],
+    "tolerance": 0
+  },
+  "known_issue": false
+},
+{
+"id": "Q3",
+"question": "Out of the age groups which one has the highest percentage insured?",
+"category": "row_filter",
+"query": {
+  "measure_group": "AGE",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "subject": "Percent Insured",
+    "stat_type": "Estimate",
+    "measures_in": ["Under 6 years", "6 to 18 years", "19 to 25 years", "26 to 34 years", "35 to 44 years", "45 to 54 years", "55 to 64 years", "65 to 74 years", "75 years and older", "Under 19 years", "19 to 64 years", "65 years and older"]
+  },
+  "order": "desc",
+  "limit": 1
+  },
+  "expected": {
+    "must_mention_all": ["65 years and older"]
+  },
+  "known_issue": false
+  },
+  {
+"id": "Q3.1",
+"question": "Which sex is more insured?",
+"category": "row_filter",
+"query": {
+  "measure_group": "SEX",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "subject": "Insured",
+    "stat_type": "Estimate",
+    "measures_in": ["Male", "Female"]
+  },
+  "order": "desc",
+  "limit": 1
+  },
+  "expected": {
+    "must_mention_all": ["Female"]
+  },
+  "known_issue": false
+  },
+  {
+"id": "Q3.2",
+"question": "Which race is most insured?",
+"category": "row_filter",
+"query": {
+  "measure_group": "RACE AND HISPANIC OR LATINO ORIGIN",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "subject": "Insured",
+    "stat_type": "Estimate",
+    "measures_in": ["White alone", "Black or African American alone", "American Indian and Alaska Native alone", "Asian alone", "Native Hawaiian and Other Pacific Islander alone", "Some other race alone", "Two or more races", "Hispanic or Latino (of any race)", "White alone, not Hispanic or Latino"]
+  },
+  "order": "desc",
+  "limit": 1
+  },
+  "expected": {
+    "must_mention_all": ["Hispanic or Latino (of any race)"]
+  },
+  "known_issue": false
+  },
+  {
+"id": "Q3.3",
+"question": "Which level of educational attainment is most insured?",
+"category": "row_filter",
+"query": {
+  "measure_group": "EDUCATIONAL ATTAINMENT",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "subject": "Insured",
+    "stat_type": "Estimate",
+    "measures_in": ["Civilian noninstitutionalized population 26 years and over", "Less than high school graduate", "High school graduate (includes equivalency)", "Some college or associate's degree", "Bachelor's degree or higher"]
+  },
+  "order": "desc",
+  "limit": 1
+  },
+  "expected": {
+    "must_mention_all": ["Civilian noninstitutionalized population 26 years and over"]
+  },
+  "known_issue": false
+  },
+  {
+"id": "Q3.4",
+"question": "Which household income bracket is least insured?",
+"category": "row_filter",
+"query": {
+  "measure_group": "HOUSEHOLD INCOME (IN 2024 INFLATION-ADJUSTED DOLLARS)",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "subject": "Insured",
+    "stat_type": "Estimate",
+    "measures_in": ["Total household population","Under $25,000", "$25,000 to $49,999", "$50,000 to $74,999", "$75,000 to $99,999", "$100,000 and over"]
+  },
+  "order": "desc",
+  "limit": 1
+  },
+  "expected": {
+    "must_mention_all": ["$75,000 to $99,999"]
+  },
+  "known_issue": false
+  },
   {
     "id": "Q4",
     "question": "Create a bar chart of insured age groups",
@@ -139,7 +296,7 @@
         "stat_type": "Estimate",
         "measures_in": ["Male", "Female"]
       },
-      "x": "label",
+      "x": "measure",
       "y": "value",
       "sort": "x_asc"
     },
@@ -194,6 +351,30 @@
   "expected": {
     "must_contain_labels": ["With a disability", "No disability"],
     "min_points": 2
+  },
+  "known_issue": false
+  },
+  {
+  "id": "Q4.4",
+  "question": "“Make a bar chart of educational attainment and percentage insured. ",
+  "category": "chart_request",
+  "query": {
+    "measure_group": "EDUCATIONAL ATTAINMENT",
+    "chart_type": "categorical",
+    "viz_type": "bar",
+    "filters": {
+      "label": "Coral Gables city, Florida",
+      "subject": "Percent Insured",
+      "stat_type": "Estimate",
+      "measures_in": ["Civilian noninstitutionalized population 26 years and over", "Less than high school graduate", "High school graduate (includes equivalency)", "Some college or associate's degree", "Bachelor's degree or higher"]
+    },
+    "x": "measure",
+    "y": "value",
+    "sort": "x_asc"
+  },
+  "expected": {
+    "must_contain_labels": ["Civilian noninstitutionalized population 26 years and over", "Less than high school graduate", "High school graduate (includes equivalency)", "Some college or associate's degree", "Bachelor's degree or higher"],
+    "min_points": 4
   },
   "known_issue": false
   }

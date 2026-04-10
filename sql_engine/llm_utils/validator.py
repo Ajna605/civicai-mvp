@@ -2,7 +2,8 @@ import json
 from typing import Dict, Any, Tuple, List, Optional
 from sql_engine.llm_utils.json_schema import SCHEMA_TEXT, FEWSHOT_TEXT
 from sql_engine.llm_utils.query_guards import OVER_HINT, UNDER_HINT, RANGE_HINT, age_under_measures_in, age_over_measures_in, measures_overlapping_range
-from sql_engine.llm_utils.json_schema import CATEGORY_SCHEMAS
+from sql_engine.llm_utils.json_schema import CATEGORY_SCHEMAS, REQUIRED_BY_CATEGORY
+from utils.schema_error_utils import _field_help, _parse_schema_error
 ALLOWED_STAT_TYPES = {"Estimate", "Margin of Error"}
 
 
@@ -155,9 +156,37 @@ def build_repair_prompt(question: str, bad_json: str, error: str, meta: Dict[str
             "measure_headings": [measure_group],
             "allowed_measures_for_group": allowed,
             "subjects": meta.get("subjects", []),
-            "labels": meta.get("labels", []),
+            "geo_labels": meta.get("geo_labels", meta.get("labels", [])),
             "stat_types": meta.get("stat_types", []),
+            "measure_groups": {measure_group: allowed},
         }
+
+    elif error.startswith("schema:"):
+        info = _parse_schema_error(error)
+        missing = info["missing"]
+        empty = info["empty"]
+
+        lines = []
+        if missing:
+            lines.append("Some required fields are missing: " + ", ".join(missing))
+        if empty:
+            lines.append("Some required fields are present but EMPTY (null/''/[]/{}): " + ", ".join(empty))
+
+        # Provide field-specific “choose from metadata” guidance
+        hints = []
+        for p in (missing + empty):
+            h = _field_help(p, meta, measure_group)
+            if h:
+                hints.append(f"- {p}: {h}")
+
+        extra = (
+            "\n".join(lines) + "\n\n"
+            "Fix the JSON as follows:\n"
+            "- Required fields must be filled with valid values.\n"
+            "- Choose values ONLY from the METADATA lists for that field. Never invent strings.\n"
+            "- If you truly cannot choose a valid value from METADATA, output null (do NOT output an empty string).\n"
+            + ("\nField rules:\n" + "\n".join(hints) + "\n" if hints else "")
+        )
 
     return (
         "Your previous JSON failed validation.\n"
@@ -289,5 +318,57 @@ def validate_against_metadata(obj: dict, meta: dict) -> tuple[bool, str]:
                 return False, f"measures_in_not_in_group:{bad}"
 
         return True, "ok"
+
+    return True, "ok"
+
+_MISSING = object()
+
+def _get_path(obj: Dict[str, Any], path: str) -> Any:
+    cur: Any = obj
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return _MISSING
+        cur = cur[part]
+    return cur
+
+def _is_empty_value(v: Any) -> bool:
+    # treat "", "   ", [], {} as empty; keep 0/False as valid
+    if v is _MISSING:
+        return False
+    if v is None:
+        return True
+    if isinstance(v, str):
+        return v.strip() == ""
+    if isinstance(v, (list, dict, tuple, set)):
+        return len(v) == 0
+    return False
+
+def schema_check(obj: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(obj, dict):
+        return False, "schema:not_an_object"
+    if "category" not in obj or "query" not in obj:
+        return False, "schema:missing_category_or_query"
+
+    cat = obj.get("category")
+    if cat not in REQUIRED_BY_CATEGORY:
+        return False, f"schema:unknown_category:{cat}"
+
+    missing: List[str] = []
+    empty: List[str] = []
+
+    for req in REQUIRED_BY_CATEGORY[cat]:
+        v = _get_path(obj, req)
+        if v is _MISSING:
+            missing.append(req)
+        elif _is_empty_value(v):
+            empty.append(req)
+
+    if missing or empty:
+        parts = []
+        if missing:
+            parts.append("missing=" + ",".join(missing))
+        if empty:
+            parts.append("empty=" + ",".join(empty))
+        return False, "schema:" + ";".join(parts)
 
     return True, "ok"

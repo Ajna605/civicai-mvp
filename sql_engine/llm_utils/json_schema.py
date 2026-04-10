@@ -10,7 +10,7 @@ Hard constraints:
 - Choose label/measure/subject/stat_type by copying an EXACT string from METADATA.
 - Do not invent strings. Do not normalize DB strings.
 - Do NOT output multiple JSON objects.
-- No extra keys anywhere.
+- No extra keys anywhere. 
 - For enums, use exact allowed values.
 - If query uses measures_in, you MUST also provide measure_group.
 - measure_group must be chosen from METADATA.measure_headings.
@@ -70,4 +70,36 @@ CATEGORY_SCHEMAS = {
     "aggregation": 'aggregation: {"category":"aggregation","query":{"measure_group":"...","op":"sum|avg|min|max|count","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]}}}',
     "row_filter": 'row_filter: {"category":"row_filter","query":{"measure_group":"...","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]},"order":"asc|desc","limit":number}}',
     "chart_request": 'chart_request: {"category":"chart_request","query":{"measure_group":"...","viz_type":"bar|pie|line|scatter","chart_type":"categorical|time_series|compare_labels","filters":{"label":"...","subject":"...","stat_type":"Estimate|Margin of Error","measures_in":[...]}, "x":"measure|year|label|geo","y":"value","sort":"x_asc|x_desc|y_asc|y_desc"}}',
+}
+
+REQUIRED_BY_CATEGORY = {
+    "row_filter": [
+        "query.measure_group",
+        "query.filters.label",
+        "query.filters.subject",
+        "query.filters.stat_type",
+        "query.order",
+        "query.limit",
+    ],
+    "aggregation": [
+        "query.measure_group",
+        "query.op",
+        "query.filters.label",
+        "query.filters.subject",
+        "query.filters.stat_type",
+    ],
+    "chart_request": [
+        "query.measure_group",
+        "query.viz_type",
+        "query.layout_type",   
+        "query.filters.label",
+        "query.filters.subject",
+        "query.filters.stat_type",
+    ],
+    "cell_lookup": [
+        "query.measure_group",  
+        "query.filters.label",
+        "query.filters.subject",
+        "query.filters.stat_type",
+    ],
 }

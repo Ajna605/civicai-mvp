@@ -1,0 +1,21 @@
+[
+  {
+"id": "Q3.2",
+"question": "Which race is most insured?",
+"category": "row_filter",
+"query": {
+  "measure_group": "RACE AND HISPANIC OR LATINO ORIGIN",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "subject": "Insured",
+    "stat_type": "Estimate",
+    "measures_in": ["White alone", "Black or African American alone", "American Indian and Alaska Native alone", "Asian alone", "Native Hawaiian and Other Pacific Islander alone", "Some other race alone", "Two or more races", "Hispanic or Latino (of any race)", "White alone, not Hispanic or Latino"]
+  },
+  "order": "desc",
+  "limit": 1
+  },
+  "expected": {
+    "must_mention_all": ["Hispanic or Latino (of any race)"]
+  },
+  "known_issue": false
+  }]

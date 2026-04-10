@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, validate_against_metadata
+from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, validate_against_metadata, schema_check
 from typing import Dict, Any
 from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_llm
 from utils.text_utils import extract_first_valid_param_obj
@@ -105,6 +105,7 @@ def llm_make_params(
                 get_param_llm(),
                 build_repair_prompt(question, raw, error, metadata)
             ).strip()
+            
             continue
 
         # semantic validation

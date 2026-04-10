@@ -233,13 +233,23 @@ COMPARE_HINT = re.compile(
     re.I,
 )
 
-UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\s+(?P<n>\d{1,3})?\b", re.I)
+UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\s+(?P<n>\d{1,3}(?:,\d{3})*|\d+)\b",
+    re.I)
+NUM_TOKEN = r"(?:\d{1,3}(?:,\d{3})*|\d+)"  # 75,999 or 75999
+
 OVER_HINT = re.compile(
-    r"\b(?P<op>over|above|greater than|at least)\s+(?P<n>\d{1,3})(?!\s*(?:to|\-)\s*\d{1,3})(?:\s+years?)?\b",
+    rf"\b(?P<op>over|above|greater\s+than|at\s+least)\s+"
+    rf"(?P<n>{NUM_TOKEN})"
+    rf"(?!\s*(?:to|\-)\s*{NUM_TOKEN})"
+    rf"(?:\s+years?)?\b",
     re.I,
 )
 RANGE_HINT = re.compile(
-    r"\b(?:(?:from|between)\s+)?(?P<low>\d{1,3})\s*(?:to|\-)\s*(?P<high>\d{1,3})(?:\s+years?\s+old|\s+years?)?\b",
+    rf"\b(?:from\s+|between\s+)?"
+    rf"(?P<low>{NUM_TOKEN})\s*"
+    rf"(?:to|\-)\s*"
+    rf"(?P<high>{NUM_TOKEN})"
+    rf"(?:\s+years?\s+old|\s+years?)?\b",
     re.I,
 )
 
@@ -352,6 +362,13 @@ def _select_disjoint_prefer_finer(bands: List[Tuple[int,int,str]]) -> List[str]:
     chosen.sort(key=lambda x: x[0])
     return [name for _, _, name in chosen]
 
+def parse_int_token(s: str) -> Optional[int]:
+    if not s:
+        return None
+    # keep digits only (removes commas, spaces)
+    digits = re.sub(r"[^\d]", "", s)
+    return int(digits) if digits else None
+
 
 def age_under_measures_in(target: int, measures: List[str]) -> List[str]:
     """
@@ -412,15 +429,15 @@ def over_age_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
 
     m = OVER_HINT.search(q)
     if m:
-        target = int(m.group("n"))
+        target = parse_int_token(m.group("n"))
     else:
         # Basic support for "65+" and "65 and over" phrasing
         plus = re.search(r"\b(?P<n>\d{1,3})\s*\+\b", q_lower)
         and_over = re.search(r"\b(?P<n>\d{1,3})\s+(and\s+over|or\s+older)\b", q_lower)
         if plus:
-            target = int(plus.group("n"))
+            target = parse_int_token(plus.group("n"))
         elif and_over:
-            target = int(and_over.group("n"))
+            target = parse_int_token(and_over.group("n"))
         else:
             return None
 
@@ -522,7 +539,7 @@ def age_range_sum_guard(
 
     under_m = UNDER_HINT.search(question)
     if under_m:
-        target = int(under_m.group("n"))
+        target = parse_int_token(under_m.group("n"))
         measures_in = age_under_measures_in(target, measures)
         if not measures_in:
             return None
@@ -539,7 +556,7 @@ def age_range_sum_guard(
 
     over_m = OVER_HINT.search(question)
     if over_m:
-        target = int(over_m.group("n"))
+        target = parse_int_token(over_m.group("n"))
         measures_in = age_over_measures_in(target, measures)
         if not measures_in:
             return None
