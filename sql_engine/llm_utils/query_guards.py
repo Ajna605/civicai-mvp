@@ -233,13 +233,23 @@ COMPARE_HINT = re.compile(
     re.I,
 )
 
-UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\s+(?P<n>\d{1,3})?\b", re.I)
+UNDER_HINT = re.compile(r"\b(under|less than|below|at most)\s+(?P<n>\d{1,3}(?:,\d{3})*|\d+)\b",
+    re.I)
+NUM_TOKEN = r"(?:\d{1,3}(?:,\d{3})*|\d+)"  # 75,999 or 75999
+
 OVER_HINT = re.compile(
-    r"\b(?P<op>over|above|greater than|at least)\s+(?P<n>\d{1,3})(?!\s*(?:to|\-)\s*\d{1,3})(?:\s+years?)?\b",
+    rf"\b(?P<op>over|above|greater\s+than|at\s+least)\s+"
+    rf"(?P<n>{NUM_TOKEN})"
+    rf"(?!\s*(?:to|\-)\s*{NUM_TOKEN})"
+    rf"(?:\s+years?)?\b",
     re.I,
 )
 RANGE_HINT = re.compile(
-    r"\b(?:(?:from|between)\s+)?(?P<low>\d{1,3})\s*(?:to|\-)\s*(?P<high>\d{1,3})(?:\s+years?\s+old|\s+years?)?\b",
+    rf"\b(?:from\s+|between\s+)?"
+    rf"(?P<low>{NUM_TOKEN})\s*"
+    rf"(?:to|\-)\s*"
+    rf"(?P<high>{NUM_TOKEN})"
+    rf"(?:\s+years?\s+old|\s+years?)?\b",
     re.I,
 )
 
@@ -412,15 +422,15 @@ def over_age_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
 
     m = OVER_HINT.search(q)
     if m:
-        target = int(m.group("n"))
+        target = parse_int_token(m.group("n"))
     else:
         # Basic support for "65+" and "65 and over" phrasing
         plus = re.search(r"\b(?P<n>\d{1,3})\s*\+\b", q_lower)
         and_over = re.search(r"\b(?P<n>\d{1,3})\s+(and\s+over|or\s+older)\b", q_lower)
         if plus:
-            target = int(plus.group("n"))
+            target = parse_int_token(plus.group("n"))
         elif and_over:
-            target = int(and_over.group("n"))
+            target = parse_int_token(and_over.group("n"))
         else:
             return None
 
@@ -485,6 +495,13 @@ def measures_overlapping_range(low: int, high: int, measures: List[str]) -> List
     return [m for _, _, m in bands]
 
 
+def parse_int_token(s: str) -> Optional[int]:
+    if not s:
+        return None
+    # keep digits only (removes commas, spaces)
+    digits = re.sub(r"[^\d]", "", s)
+    return int(digits) if digits else None
+
 def age_range_sum_guard(
     question: str,
     meta: dict,
@@ -505,7 +522,14 @@ def age_range_sum_guard(
     if range_m:
         low = int(range_m.group("low"))
         high = int(range_m.group("high"))
-        measures_in = measures_overlapping_range(low, high, measures)
+
+        # Look for exact measure otherwise look for overlapping ranges
+        exact = [m for m in measures if parse_age_band(m) == (low, high)]
+        if exact:
+            measures_in = exact
+        else:
+            measures_in = measures_overlapping_range(low, high, measures)
+
         if not measures_in:
             return None
 
@@ -522,7 +546,7 @@ def age_range_sum_guard(
 
     under_m = UNDER_HINT.search(question)
     if under_m:
-        target = int(under_m.group("n"))
+        target = parse_int_token(under_m.group("n"))
         measures_in = age_under_measures_in(target, measures)
         if not measures_in:
             return None
@@ -539,7 +563,7 @@ def age_range_sum_guard(
 
     over_m = OVER_HINT.search(question)
     if over_m:
-        target = int(over_m.group("n"))
+        target = parse_int_token(over_m.group("n"))
         measures_in = age_over_measures_in(target, measures)
         if not measures_in:
             return None
@@ -580,16 +604,36 @@ def ranking_intent_guard(question: str, meta: dict) -> Optional[Dict[str, Any]]:
 
     return None
 
+BREAKDOWN_PATTERNS = [
+    re.compile(r"\bcategoris(?:ed|ed)\s+by\s+(.+)$", re.I),
+    re.compile(r"\bbroken\s+down\s+by\s+(.+)$", re.I),
+    re.compile(r"\bgroup(?:ed)?\s+by\s+(.+)$", re.I),
+]
+
+def extract_breakdown_span(question: str) -> str | None:
+    q = question.strip()
+    for pat in BREAKDOWN_PATTERNS:
+        m = pat.search(q)
+        if m:
+            span = m.group(1).strip(" .?")
+            # keep it short; often "age groups", "region", etc.
+            return span
+    return None
+
 def measure_group_guard(question: str, meta: dict, threshold: float = 0.75, margin: float = 0.20):
     groups = meta.get("measure_headings", []) or []
     if not groups:
         return None
 
+    breakdown = extract_breakdown_span(question)
+    # Use the breakdown phrase if present; it’s what defines the measure group for charts/rankings.
+    match_text = breakdown if breakdown else question
+
     df, idf = build_vocab_token_stats(groups)
 
     scored = []
     for g in groups:
-        hit = best_vocab_match(question, [g], df, idf, max_df_frac=0.8)
+        hit = best_vocab_match(match_text, [g], df, idf, max_df_frac=0.8)
         if hit:
             scored.append(hit)
 
@@ -602,7 +646,6 @@ def measure_group_guard(question: str, meta: dict, threshold: float = 0.75, marg
 
     if best_score < threshold:
         return None
-
     if (best_score - second_score) < margin:
         return None
 
@@ -610,6 +653,7 @@ def measure_group_guard(question: str, meta: dict, threshold: float = 0.75, marg
         "force_measure_group": best_group,
         "measure_group_score": best_score,
         "reason": "measure_group_match",
+        "debug_match_text": match_text,
     }
 
 NEGATION_HINT = re.compile(r"\b(no|not|without|never|none)\b", re.I)
@@ -715,6 +759,15 @@ def merge_constraints(
         if k not in merged:
             merged[k] = v
 
+    # --- NEW RULE: measures_in beats earlier measure_group guesses ---
+    if override.get("force_measures_in"):
+        
+        # If this same override doesn't explicitly provide a measure_group,
+        # invalidate previously-chosen measure_group (often lexical "percent" noise).
+        if "force_measure_group" not in override:
+            merged.pop("force_measure_group", None)
+            merged.pop("measure_group_score", None)
+
     # If you *want* some keys to be last-wins (e.g., force_measures_in from under-range should override),
     # you can allowlist them:
     LAST_WINS = {"force_measures_in", "force_measure", "force_measure_group"}
@@ -724,7 +777,6 @@ def merge_constraints(
 
     return merged
 
-## Merges guard results - some with precedence
 def resolve_measure_override(question: str, meta: dict) -> Optional[dict]:
     merged = None
     for guard in GUARDS:
@@ -732,4 +784,5 @@ def resolve_measure_override(question: str, meta: dict) -> Optional[dict]:
         if not override:
             continue
         merged = merge_constraints(merged, override, guard.__name__)
+
     return merged

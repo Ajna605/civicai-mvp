@@ -57,13 +57,9 @@ def extract_first_valid_param_obj(text: str):
             continue
         try:
             obj, end = decoder.raw_decode(text[i:])
-            if (
-                isinstance(obj, dict)
-                and set(obj.keys()) == {"category", "query"}
-                and isinstance(obj.get("category"), str)
-                and isinstance(obj.get("query"), dict)
-            ):
+            if isinstance(obj, dict) and isinstance(obj.get("category"), str) and isinstance(obj.get("query"), dict):
                 return obj
+                        
         except Exception:
             pass
         i += 1

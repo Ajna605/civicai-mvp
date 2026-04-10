@@ -1,0 +1,21 @@
+[
+{
+  "id": "Q2.3",
+  "question": "How many people are below the 399 percent of the poverty threshold?",
+  "category": "aggregation",
+    "query": {
+  "measure_group": "RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS",
+  "op": "sum",
+  "filters": {
+    "label": "Coral Gables city, Florida",
+    "measures_in":["Below 138 percent of the poverty threshold", "138 to 399 percent of the poverty threshold"],
+    "subject": "Total",
+    "stat_type": "Estimate"
+  }},
+  "expected": {
+    "expected_numbers": [13147],
+    "tolerance": 0
+  },
+  "known_issue": false
+}  
+]

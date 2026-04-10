@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, validate_against_metadata
+from sql_engine.llm_utils.validator import build_repair_prompt, make_param_prompt, validate_measure_group_consistency, validate_against_metadata, schema_check
 from typing import Dict, Any
 from sql_engine.llm_utils.llm_settings import generate_json_only, build_param_llm
 from utils.text_utils import extract_first_valid_param_obj
@@ -64,7 +64,7 @@ def llm_make_params(
     question: str,
     metadata: Dict[str, Any],
     constraints: dict | None = None,
-    max_repairs: int = 0,  # DEBUG
+    max_repairs: int = 3,  # DEBUG
 ) -> Dict[str, Any]:
     
     # IMPORTANT: if constraints are provided by the caller (e.g., evaluation harness),
@@ -93,18 +93,18 @@ def llm_make_params(
             ).strip()
             continue
 
-        if not isinstance(obj, dict) or "category" not in obj or "query" not in obj:
+        ok, reason = schema_check(obj)
+        if not ok:
             if attempt == max_repairs:
                 raise ValueError(
                     f"Failed to generate valid JSON after {max_repairs} repairs.\nLast output:\n{raw}"
                 )
-            error = "missing_category_or_query"
             raw = generate_json_only(
                 PARAM_LLM,
-                build_repair_prompt(question, raw, error, metadata)
+                build_repair_prompt(question, json.dumps(obj, ensure_ascii=False), reason, metadata),
             ).strip()
+            
             continue
-
         # semantic validation
         group_ok, group_reason = validate_measure_group_consistency(obj, metadata)
         if not group_ok:
@@ -121,10 +121,7 @@ def llm_make_params(
             raw = generate_json_only(PARAM_LLM, repair_prompt).strip()
             continue
 
-
         # Hard-enforce any forced constraints (prevents invented strings).
-        print("RAW_OBJ_KEYS", obj.keys(), "QUERY_KEYS", getattr(obj.get("query"), "keys", lambda: None)())
-        print(constraints)
         obj = apply_forced_constraints(obj, constraints)
 
         # If model invented a cell_lookup field not in metadata, force a repair

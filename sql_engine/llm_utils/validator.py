@@ -1,8 +1,7 @@
 import json
 from typing import Dict, Any, Tuple, List, Optional
-from sql_engine.llm_utils.json_schema import SCHEMA_TEXT, FEWSHOT_TEXT
+from sql_engine.llm_utils.json_schema import SCHEMA_TEXT, FEWSHOT_TEXT, CATEGORY_SCHEMAS, REQUIRED_BY_CATEGORY
 from sql_engine.llm_utils.query_guards import OVER_HINT, UNDER_HINT, RANGE_HINT, age_under_measures_in, age_over_measures_in, measures_overlapping_range
-from sql_engine.llm_utils.json_schema import CATEGORY_SCHEMAS
 ALLOWED_STAT_TYPES = {"Estimate", "Margin of Error"}
 
 # validator.py (or wherever SCHEMA_TEXT lives)
@@ -269,5 +268,39 @@ def validate_against_metadata(obj: dict, meta: dict) -> tuple[bool, str]:
                 return False, f"measures_in_not_in_group:{bad}"
 
         return True, "ok"
+
+    return True, "ok"
+
+
+def _get_path(d: Dict[str, Any], path: str) -> Any:
+    cur: Any = d
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+def _has_path(d: Dict[str, Any], path: str) -> bool:
+    return _get_path(d, path) is not None
+
+def schema_check(obj: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(obj, dict):
+        return False, "schema:not_an_object"
+    if "category" not in obj or "query" not in obj:
+        return False, "schema:missing_category_or_query"
+
+    cat = obj.get("category")
+    if cat not in REQUIRED_BY_CATEGORY:
+        return False, f"schema:unknown_category:{cat}"
+
+    missing: List[str] = []
+    for req in REQUIRED_BY_CATEGORY[cat]:
+        if not _has_path(obj, req):
+            missing.append(req)
+    if missing:
+        parts = []
+        if missing:
+            parts.append("missing=" + ",".join(missing))
+        return False, "schema:" + ";".join(parts)
 
     return True, "ok"

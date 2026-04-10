@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from collections import Counter, defaultdict
 from sql_engine.llm_utils.query_guards import resolve_measure_override
 from sql_engine.llm_utils.param_gen import llm_make_params, load_metadata
-from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures, validate_cell_lookup
+from sql_engine.llm_utils.validator import validate_measure_group_consistency, enforce_deterministic_measures, validate_cell_lookup, _get_path, REQUIRED_BY_CATEGORY
 
 DEFAULT_SUBJECT = "Total"
 DEFAULT_STAT_TYPE = "Estimate"
@@ -26,6 +26,19 @@ def normalize_gold(ex: Dict[str, Any]) -> Dict[str, Any]:
         q.setdefault("stat_type", DEFAULT_STAT_TYPE)
     ex["query"] = q
     return ex
+
+_MISSING = object()
+def build_required_view(obj: Dict[str, Any], required_paths: List[str]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for p in required_paths:
+        v = _get_path(obj, p)
+        if v is _MISSING:
+            # If schema_pass is required before exact match, this shouldn't happen,
+            # but keep it explicit.
+            out[p] = _MISSING
+        else:
+            out[p] = v
+    return out
 
 def exact_match(a: Any, b: Any) -> bool:
     # same type required
@@ -59,9 +72,22 @@ def exact_match(a: Any, b: Any) -> bool:
                 if not found:
                     return False
             return True
-
     # everything else → direct equality
     return a == b
+
+def exact_match_required(category: str, pred: Dict[str, Any], gold: Dict[str, Any]) -> bool:
+    required = REQUIRED_BY_CATEGORY.get(category)
+    if not required:
+        return False  # unknown category, or decide a default
+
+    pred_view = build_required_view(pred, required)
+    gold_view = build_required_view(gold, required)
+
+    # If any required path is missing, treat as non-match
+    if _MISSING in pred_view.values() or _MISSING in gold_view.values():
+        return False
+
+    return exact_match(pred_view, gold_view)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -104,9 +130,6 @@ def main():
         gold_query = ex.get("query", {})
 
         measure_override = resolve_measure_override(question, meta)
-        print("MEASURE OVERRIDE")
-        print(measure_override)
-
 
         rec: Dict[str, Any] = {
             "id": qid,
@@ -128,7 +151,6 @@ def main():
                 pred = llm_make_params(question, meta, max_repairs=args.max_repairs, constraints=measure_override)
                 # for cases with measure group
                 pred = enforce_deterministic_measures(pred, question, meta)
-
             rec["pred"] = pred
             
             pred_cat = pred.get("category")
@@ -160,7 +182,8 @@ def main():
                 per_category[gold_cat]["category_match"] += 1
 
             # Only do exact query match if schema/semantic validation passed
-            rec["query_exact_match"] = rec["schema_pass"] and exact_match(pred_query, gold_query)
+            gold_obj = {"category": gold_cat, "query": gold_query}
+            rec["query_exact_match"] = rec["schema_pass"] and exact_match_required(gold_cat, pred, gold_obj)
             if rec["query_exact_match"]:
                 query_exact_ok += 1
                 per_category[gold_cat]["query_exact_match"] += 1
