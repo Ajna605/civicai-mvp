@@ -3,6 +3,7 @@
 # - accept question
 # - print answer + sources
 
+import asyncio
 import time
 from utils.forecast_utils import is_forecast_question
 import argparse
@@ -13,12 +14,25 @@ from llama_index.core import Document, VectorStoreIndex, StorageContext
 PROJECT_ROOT = Path(__file__).resolve().parents[0]  # adjust if needed
 DEFAULT_BASE = PROJECT_ROOT / "storage" / "index"
 
+_DEFAULT_PDF = str(
+    PROJECT_ROOT / "data" / "raw"
+    / "Coral Gables - Comprehensive Plan - 12-25-2025 20-55 - selectable.pdf"
+)
+_DEFAULT_RAGANYTHING_CACHE = str(
+    PROJECT_ROOT / "storage" / "raganything" / "mineru_cache"
+)
+
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--format", choices=["pdf", "docx", "csv"], required=True,
+    p.add_argument("--format", choices=["pdf", "docx", "csv"], default="pdf",
                    help="Which normalized folder to read rag_chunks.jsonl from")
-    p.add_argument("--engine", choices=["rag", "sql"], required=True,
+    p.add_argument("--engine", choices=["rag", "sql", "raganything"], required=True,
                    help="Which engine to run")
+    p.add_argument("--pdf_path", default=_DEFAULT_PDF,
+                   help="Path to PDF corpus (used by raganything engine)")
+    p.add_argument("--raganything_cache_dir", default=_DEFAULT_RAGANYTHING_CACHE,
+                   help="Cache directory for raganything engine "
+                        "(default: storage/raganything/mineru_cache/)")
     return p.parse_args()
 
 DOC_CATEGORIES = ["policy_lookup", "section_lookup", "table_lookup", "general_summary"]
@@ -58,6 +72,50 @@ if __name__ == "__main__":
         start = time.time()
         print(q)
         print(query_civicai(q, index_path, args.format))
+        end = time.time()
+        print("Time taken: ", (end - start), "seconds")
+
+    elif args.engine == "raganything":
+        from evaluation.eval_runner_doc_raganything import (
+            _build_raganything,
+            _process_pdf_if_needed,
+            _retrieve_chunks,
+            RagChunkWrapper,
+        )
+        from rag.llm_settings import llm_verbalize_answer, conv_llm
+        from utils.retrieval_utils import format_context
+
+        conv_llm()
+
+        async def _run_raganything(question, pdf_path, cache_dir):
+            cache_path = Path(cache_dir)
+            cache_path.mkdir(parents=True, exist_ok=True)
+
+            rag = _build_raganything(cache_path)
+            await _process_pdf_if_needed(rag, pdf_path, cache_path)
+
+            raw_chunks = await _retrieve_chunks(rag, question, top_k=5)
+            retrieved = [RagChunkWrapper(r) for r in raw_chunks]
+
+            if not retrieved:
+                return {"answer": "No relevant context retrieved.", "references": []}
+
+            context = format_context(retrieved)
+            answer = llm_verbalize_answer(question, context)
+
+            refs = []
+            for r in retrieved:
+                snippet = (r.text or "")[:220]
+                refs.append({"snippet": snippet + ("…" if len(r.text or "") > 220 else "")})
+
+            return {"answer": answer, "references": refs}
+
+        start = time.time()
+        print(q)
+        result = asyncio.run(
+            _run_raganything(q, args.pdf_path, args.raganything_cache_dir)
+        )
+        print(result)
         end = time.time()
         print("Time taken: ", (end - start), "seconds")
 
