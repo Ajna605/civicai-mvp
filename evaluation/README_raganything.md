@@ -115,10 +115,71 @@ Compare `gate_*.json` in both output directories for a side-by-side view of
   similarity search (`mode="naive"`) is used.  No policy-lookup code path,
   no table-aware reranking, no graph traversal.
 
-* **Table content included** – `enable_table_processing=True` tells MinerU to
-  extract table rows and include them in the knowledge base alongside narrative
-  text.  No separate `pdf_tables` index is used.
+* **Table content included** – table extraction is enabled by default so that
+  MinerU extracts table rows and includes them in the knowledge base alongside
+  narrative text.  No separate `pdf_tables` index is used.
 
 * **Deterministic** – `do_sample=False` / `temperature=0` semantics apply only
   to the LLM (which is never called here).  Vector similarity search is
   deterministic given the same embeddings and FAISS/NanoVDB index.
+
+---
+
+## 7 — raganything==1.2.10 Compatibility
+
+The runner auto-detects the installed raganything version using
+`inspect.signature` and `hasattr` checks so it works across versions.
+Below is a summary of the differences from earlier releases and how they are
+handled.
+
+### 7.1 `RAGAnythingConfig.__init__` – no `llm_model_func`
+
+In raganything ≥ 1.2.10, `RAGAnythingConfig.__init__()` no longer accepts
+`llm_model_func` or `vision_model_func` as keyword arguments.  The runner
+inspects the constructor signature and only passes these when they are listed
+in the parameter set.
+
+### 7.2 MinerU parser flag mapping
+
+The underlying `MineruParser._run_mineru_command` in raganything 1.2.10
+accepts **MinerU-native** flags rather than the `enable_*` wrappers used in
+earlier releases:
+
+| Old flag (pre-1.2.10) | New flag (1.2.10 MinerU) | Default | Notes |
+|------------------------|--------------------------|---------|-------|
+| `enable_table_processing` | `table` | `True` | Table extraction enabled by default |
+| `enable_equation_processing` | `formula` | `True` | Equation / formula extraction |
+| `enable_image_processing` | *(none)* | — | MinerU does not expose an image toggle; omit to avoid `TypeError` |
+
+The runner inspects both `process_document_complete` and
+`MineruParser._run_mineru_command` signatures to decide which names to use.
+
+### 7.3 `finalize_storages` removed from config
+
+`RAGAnythingConfig` in 1.2.10 does **not** have a `finalize_storages` method.
+Internal code paths may still attempt to call it during storage tear-down.
+The runner patches a no-op async function onto the config object when the
+attribute is missing, preventing `AttributeError` at shutdown.
+
+### 7.4 CUDA / GPU troubleshooting on FIU cluster
+
+If your NVIDIA driver is too old for the installed PyTorch CUDA build you will
+see:
+
+```
+CUDA initialization: The NVIDIA driver on your system is too old …
+```
+
+Workarounds:
+
+1. **CPU-only** – force PyTorch to skip CUDA entirely:
+   ```bash
+   export CUDA_VISIBLE_DEVICES=""
+   python evaluation/eval_runner_doc_raganything.py ...
+   ```
+
+2. **Install a matching PyTorch** – pick the wheel built for your driver's
+   CUDA version (check with `nvidia-smi`):
+   ```bash
+   pip install torch --index-url https://download.pytorch.org/whl/cu124
+   ```

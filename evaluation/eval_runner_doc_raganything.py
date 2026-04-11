@@ -24,6 +24,7 @@ Usage (from repo root):
 
 import argparse
 import asyncio
+import inspect
 import json
 import os
 import sys
@@ -130,27 +131,64 @@ async def _dummy_llm(
 
 def _build_raganything(cache_dir: Path):
     """Instantiate a RAGAnything object wired to the shared embedding model
-    and a dummy LLM.  MinerU is selected implicitly by process_document_complete."""
+    and a dummy LLM.  MinerU is selected implicitly by process_document_complete.
+
+    Version compatibility (raganything 1.2.10+):
+    - ``RAGAnythingConfig.__init__`` may not accept ``llm_model_func`` or
+      ``vision_model_func``; we inspect the signature and only pass them when
+      supported.
+    - If the resulting config lacks ``finalize_storages`` (removed in some
+      versions) we patch a no-op so internal callers don't raise AttributeError.
+    """
     from raganything import RAGAnything, RAGAnythingConfig  # noqa: PLC0415
     from lightrag.utils import EmbeddingFunc  # noqa: PLC0415
 
-    rag = RAGAnything(
-        RAGAnythingConfig(
-            working_dir=str(cache_dir),
-            llm_model_func=_dummy_llm,
-            vision_model_func=_dummy_llm,
-            embedding_func=EmbeddingFunc(
-                embedding_dim=_EMBED_DIM,
-                max_token_size=_EMBED_MAX_TOKENS,
-                func=_make_embedding_func(),
-            ),
-        )
+    # --- build keyword arguments, gating optional ones by signature ----------
+    config_sig = inspect.signature(RAGAnythingConfig.__init__)
+    config_params = set(config_sig.parameters.keys())
+
+    config_kwargs: Dict[str, Any] = dict(
+        working_dir=str(cache_dir),
+        embedding_func=EmbeddingFunc(
+            embedding_dim=_EMBED_DIM,
+            max_token_size=_EMBED_MAX_TOKENS,
+            func=_make_embedding_func(),
+        ),
     )
+
+    if "llm_model_func" in config_params:
+        config_kwargs["llm_model_func"] = _dummy_llm
+    if "vision_model_func" in config_params:
+        config_kwargs["vision_model_func"] = _dummy_llm
+
+    config = RAGAnythingConfig(**config_kwargs)
+
+    # --- Fix #3: patch missing finalize_storages (raganything ≥1.2.10) -------
+    if not hasattr(config, "finalize_storages"):
+        async def _noop_finalize(self: Any = None) -> None:
+            pass
+        config.finalize_storages = _noop_finalize  # type: ignore[attr-defined]
+
+    rag = RAGAnything(config)
     return rag
 
 
 async def _process_pdf_if_needed(rag: Any, pdf_path: str, cache_dir: Path) -> None:
-    """Run MinerU parsing + LightRAG ingestion if not already cached."""
+    """Run MinerU parsing + LightRAG ingestion if not already cached.
+
+    Version compatibility (raganything 1.2.10+):
+    ``process_document_complete`` forwards keyword arguments to the MinerU
+    parser.  Older versions accepted ``enable_table_processing`` /
+    ``enable_image_processing`` / ``enable_equation_processing`` while
+    raganything 1.2.10 exposes the underlying MinerU flags directly:
+        table (bool)   – enable table extraction  (default True)
+        formula (bool)  – enable equation extraction (default True)
+    Image processing is not a MinerU-level toggle in 1.2.10, so we skip it
+    entirely when the old name is unsupported.
+
+    We inspect ``process_document_complete`` and, where available, the inner
+    ``MineruParser._run_mineru_command`` to decide which argument names to use.
+    """
     if _is_cached(cache_dir):
         print(f"[raganything] Cache found at '{cache_dir}'. Skipping PDF processing.")
         return
@@ -158,14 +196,46 @@ async def _process_pdf_if_needed(rag: Any, pdf_path: str, cache_dir: Path) -> No
     mineru_output = cache_dir / "mineru_output"
     mineru_output.mkdir(parents=True, exist_ok=True)
 
+    # --- Detect supported keyword arguments for document processing ----------
+    proc_sig = inspect.signature(rag.process_document_complete)
+    proc_params = set(proc_sig.parameters.keys())
+
+    # Also inspect the low-level MinerU command if available
+    mineru_params: set = set()
+    try:
+        from raganything.parser import MineruParser  # noqa: PLC0415
+        mineru_params = set(
+            inspect.signature(MineruParser._run_mineru_command).parameters.keys()
+        )
+    except Exception:
+        pass  # older versions may not expose this; fall back to proc_params only
+
+    processing_kwargs: Dict[str, Any] = {}
+
+    # Table processing – enabled by default
+    if "enable_table_processing" in proc_params:
+        processing_kwargs["enable_table_processing"] = True
+    elif "table" in proc_params or "table" in mineru_params:
+        processing_kwargs["table"] = True
+
+    # Equation / formula processing
+    if "enable_equation_processing" in proc_params:
+        processing_kwargs["enable_equation_processing"] = False
+    elif "formula" in proc_params or "formula" in mineru_params:
+        processing_kwargs["formula"] = True
+
+    # Image processing – only pass when the old-style flag is recognised
+    if "enable_image_processing" in proc_params:
+        processing_kwargs["enable_image_processing"] = False
+    # else: MinerU 1.2.10 doesn't expose an image toggle → omit
+
     print(f"[raganything] Processing PDF: {pdf_path}")
+    print(f"[raganything] process_document_complete kwargs: {processing_kwargs}")
     print("[raganything] First run may take several minutes (MinerU + LightRAG ingestion)…")
     await rag.process_document_complete(
         file_path=pdf_path,
         output_dir=str(mineru_output),
-        enable_table_processing=True,
-        enable_image_processing=False,
-        enable_equation_processing=False,
+        **processing_kwargs,
     )
 
     (cache_dir / _PROCESSED_MARKER).touch()
