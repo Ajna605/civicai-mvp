@@ -145,11 +145,11 @@ The underlying `MineruParser._run_mineru_command` in raganything 1.2.10
 accepts **MinerU-native** flags rather than the `enable_*` wrappers used in
 earlier releases:
 
-| Old flag (pre-1.2.10) | New flag (1.2.10 MinerU) | Default | Notes |
-|------------------------|--------------------------|---------|-------|
-| `enable_table_processing` | `table` | `True` | Table extraction enabled by default |
-| `enable_equation_processing` | `formula` | `True` | Equation / formula extraction |
-| `enable_image_processing` | *(none)* | — | MinerU does not expose an image toggle; omit to avoid `TypeError` |
+| Old flag (pre-1.2.10) | Old runner value | New flag (1.2.10 MinerU) | New runner value | Notes |
+|------------------------|-----------------|--------------------------|-----------------|-------|
+| `enable_table_processing` | `True` | `table` | `True` | Table extraction enabled by default |
+| `enable_equation_processing` | `False` | `formula` | `True` | MinerU's `formula` defaults to `True`; runner now enables it |
+| `enable_image_processing` | `False` | *(none)* | — | MinerU does not expose an image toggle; omit to avoid `TypeError` |
 
 The runner inspects both `process_document_complete` and
 `MineruParser._run_mineru_command` signatures to decide which names to use.
