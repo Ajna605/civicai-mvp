@@ -93,21 +93,32 @@ def _is_cached(cache_dir: Path) -> bool:
 # ===========================================================================
 
 def _make_embedding_func():
-    """
-    Return an async embedding callable that wraps the llama_index embed model
-    (sentence-transformers/all-MiniLM-L6-v2) so we use exactly the same
-    embedding space as the vanilla runner.
-    """
     from llama_index.core import Settings  # noqa: PLC0415
+    from lightrag.utils import EmbeddingFunc  # noqa: PLC0415
+    import numpy as np
+    import asyncio
 
-    async def embedding_func(texts: List[str]) -> np.ndarray:
-        embeddings = Settings.embed_model.get_text_embedding_batch(
-            texts, show_progress=False
-        )
-        return np.array(embeddings, dtype=np.float32)
+    EMBED_DIM = 384  # all-MiniLM-L6-v2
 
-    return embedding_func
+    async def _embed(texts: List[str]) -> np.ndarray:
+        # offload sync embedding to a thread so we don't block asyncio loop
+        def _run():
+            embs = Settings.embed_model.get_text_embedding_batch(texts, show_progress=False)
+            arr = np.asarray(embs, dtype=np.float32)
+            # Ensure shape (N, 384)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+            return arr
 
+        arr = await asyncio.to_thread(_run)
+
+        # optional strict check
+        if arr.shape[1] != EMBED_DIM:
+            raise ValueError(f"Unexpected embedding dim {arr.shape[1]} (expected {EMBED_DIM})")
+
+        return arr
+
+    return EmbeddingFunc(embedding_dim=EMBED_DIM, func=_embed)
 
 # ===========================================================================
 # Dummy LLM  –  never called in retrieval-only mode
@@ -130,47 +141,30 @@ async def _dummy_llm(
 # ===========================================================================
 
 def _build_raganything(cache_dir: Path):
-    """Instantiate a RAGAnything object wired to the shared embedding model
-    and a dummy LLM.  MinerU is selected implicitly by process_document_complete.
-
-    Version compatibility (raganything 1.2.10+):
-    - ``RAGAnythingConfig.__init__`` may not accept ``llm_model_func`` or
-      ``vision_model_func``; we inspect the signature and only pass them when
-      supported.
-    - If the resulting config lacks ``finalize_storages`` (removed in some
-      versions) we patch a no-op so internal callers don't raise AttributeError.
-    """
     from raganything import RAGAnything, RAGAnythingConfig  # noqa: PLC0415
-    from lightrag.utils import EmbeddingFunc  # noqa: PLC0415
+    from lightrag.lightrag import LightRAG  # noqa: PLC0415
 
-    # --- build keyword arguments, gating optional ones by signature ----------
-    config_sig = inspect.signature(RAGAnythingConfig.__init__)
-    config_params = set(config_sig.parameters.keys())
+    embedding_func = _make_embedding_func()
 
-    config_kwargs: Dict[str, Any] = dict(
+    config = RAGAnythingConfig(
         working_dir=str(cache_dir),
-        embedding_func=EmbeddingFunc(
-            embedding_dim=_EMBED_DIM,
-            max_token_size=_EMBED_MAX_TOKENS,
-            func=_make_embedding_func(),
-        ),
+        parser_output_dir=str(cache_dir / "parser_output"),
+        parser="mineru",
+        parse_method="auto",
     )
 
-    if "llm_model_func" in config_params:
-        config_kwargs["llm_model_func"] = _dummy_llm
-    if "vision_model_func" in config_params:
-        config_kwargs["vision_model_func"] = _dummy_llm
+    lightrag = LightRAG(
+        working_dir=str(cache_dir / "lightrag"),
+        embedding_func=embedding_func,
+        llm_model_func=_dummy_llm,   # optional but should be callable
+    )
 
-    config = RAGAnythingConfig(**config_kwargs)
-
-    # --- Fix #3: patch missing finalize_storages (raganything ≥1.2.10) -------
-    if not hasattr(config, "finalize_storages"):
-        async def _noop_finalize(self: Any = None) -> None:
-            pass
-        config.finalize_storages = _noop_finalize  # type: ignore[attr-defined]
-
-    rag = RAGAnything(config)
-    return rag
+    return RAGAnything(
+        config=config,
+        lightrag=lightrag,
+        llm_model_func=_dummy_llm,
+        vision_model_func=_dummy_llm,
+    )
 
 
 async def _process_pdf_if_needed(rag: Any, pdf_path: str, cache_dir: Path) -> None:

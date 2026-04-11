@@ -11,25 +11,25 @@ def rag_llm():
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    # Settings.llm = None
+    Settings.llm = None
 
-    Settings.llm = HuggingFaceLLM(
-        # 3B for RAG
-        model_name="Qwen/Qwen2.5-3B-Instruct",
-        tokenizer_name="Qwen/Qwen2.5-3B-Instruct",
-        # model_name="Qwen/Qwen2.5-14B-Instruct",
-        # tokenizer_name="Qwen/Qwen2.5-14B-Instruct",
-        #7B Middleway
-        # model_name="Qwen/Qwen2.5-7B-Instruct",   # safer than 14B for iteration
-        # tokenizer_name="Qwen/Qwen2.5-7B-Instruct",
-        context_window=8192,
-        max_new_tokens=250,
-        device_map = "cuda",
-        generate_kwargs={
-            "do_sample": False,
-        },
-        model_kwargs={"dtype": torch.bfloat16}
-    )
+    # Settings.llm = HuggingFaceLLM(
+    #     # 3B for RAG
+    #     model_name="Qwen/Qwen2.5-3B-Instruct",
+    #     tokenizer_name="Qwen/Qwen2.5-3B-Instruct",
+    #     # model_name="Qwen/Qwen2.5-14B-Instruct",
+    #     # tokenizer_name="Qwen/Qwen2.5-14B-Instruct",
+    #     #7B Middleway
+    #     # model_name="Qwen/Qwen2.5-7B-Instruct",   # safer than 14B for iteration
+    #     # tokenizer_name="Qwen/Qwen2.5-7B-Instruct",
+    #     context_window=8192,
+    #     max_new_tokens=250,
+    #     device_map = "cuda",
+    #     generate_kwargs={
+    #         "do_sample": False,
+    #     },
+    #     model_kwargs={"dtype": torch.bfloat16}
+    # )
 
 def conv_llm() -> None:
     Settings.llm = HuggingFaceLLM(
